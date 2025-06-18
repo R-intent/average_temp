@@ -1,0 +1,998 @@
+import React, { useState, useEffect } from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, Line, LineChart, ReferenceArea, ReferenceDot } from 'recharts';
+import './App.css';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
+
+const donutData = [
+  { name: 'Conforme', value: 6, color: '#00DCFA', label: 'Sites conformes', logements: 42 },
+  { name: 'Alerte', value: 3, color: '#FF6600', label: 'Sites en alerte', logements: 18 },
+  { name: 'Critique', value: 1, color: '#FF204E', label: 'Sites critiques', logements: 7 },
+];
+
+// Données réalistes pour le tableau
+const sitesData = [
+  { nom: 'immeuble_ancien_rouen', temp: 16.2, categorie: 'critique', seuil: '18–24 °C', logements: 7, date: '14/06/2025' },
+  { nom: 'residence_luxe_tours', temp: 17.5, categorie: 'alerte', seuil: '18–24 °C', logements: 6, date: '14/06/2025' },
+  { nom: 'maison_famille_jardin', temp: 20.3, categorie: 'conforme', seuil: '18–24 °C', logements: 8, date: '14/06/2025' },
+  { nom: 'immeuble_appart_famille', temp: 19.8, categorie: 'conforme', seuil: '18–24 °C', logements: 12, date: '14/06/2025' },
+  { nom: 'immeuble_ancien_le_mans', temp: 24.7, categorie: 'conforme', seuil: '18–24 °C', logements: 10, date: '14/06/2025' },
+  { nom: 'immeuble_repres_rennes', temp: 22.4, categorie: 'conforme', seuil: '18–24 °C', logements: 12, date: '14/06/2025' },
+  { nom: 'villa_eco_nantes', temp: 18.1, categorie: 'alerte', seuil: '18–24 °C', logements: 7, date: '14/06/2025' },
+  { nom: 'maison_ilot_angers', temp: 18.7, categorie: 'alerte', seuil: '18–24 °C', logements: 5, date: '14/06/2025' },
+  { nom: 'residence_jeunes_lemans', temp: 21.2, categorie: 'conforme', seuil: '18–24 °C', logements: 10, date: '14/06/2025' },
+  { nom: 'maison_eco_rouen', temp: 19.2, categorie: 'conforme', seuil: '18–24 °C', logements: 10, date: '14/06/2025' },
+].map(site => ({ ...site, chartData: generateSiteChartData(site.categorie, site.nom) }));
+
+// Couleurs statuts identiques au donut
+const STATUS_COLORS = {
+  conforme: { label: 'Conforme', color: '#00DCFA', bg: '#E6F7FB', icon: '❤' },
+  alerte: { label: 'Alerte', color: '#FF6600', bg: '#FFF3E6', icon: '⚠️' },
+  critique: { label: 'Critique', color: '#FF204E', bg: '#FFE6EC', icon: '⛔' },
+};
+
+// Nouveau composant Select moderne
+function ModernSelect({ value, onChange, children, style = {} }) {
+  return (
+    <div style={{
+      position: 'relative',
+      display: 'inline-block',
+      width: 240,
+      ...style,
+    }}>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          width: '100%',
+          padding: '12px 44px 12px 18px',
+          borderRadius: 16,
+          border: '1.5px solid #e6e6e6',
+          background: '#F7F9FB',
+          fontSize: 17,
+          color: '#222',
+          fontWeight: 500,
+          boxShadow: '0 2px 8px #f0f4f8',
+          appearance: 'none',
+          outline: 'none',
+          transition: 'border 0.18s, box-shadow 0.18s',
+        }}
+        onFocus={e => e.target.style.border = '1.5px solid #3DB6E3'}
+        onBlur={e => e.target.style.border = '1.5px solid #e6e6e6'}
+      >
+        {children}
+      </select>
+      {/* Flèche custom */}
+      <span style={{
+        position: 'absolute',
+        right: 18,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        pointerEvents: 'none',
+        display: 'flex',
+        alignItems: 'center',
+      }}>
+        <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M6 8L10 12L14 8" stroke="#3DB6E3" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      </span>
+    </div>
+  );
+}
+
+function TemperatureIndicator({ selected, setSelected, navigate }) {
+  const [animateText, setAnimateText] = useState(false);
+
+  // Plus d'effet de fondu sur le texte central, on va animer le donut
+
+  // Filtrage des données selon la sélection
+  let filteredData = donutData;
+  let total = donutData.reduce((acc, d) => acc + d.value, 0);
+  let percent = 70;
+  let centerLabel = 'des sites conformes';
+  let legend = donutData;
+  let centerValue = 6;
+
+  if (selected === 'conforme') {
+    filteredData = [donutData[0]];
+    percent = Math.round((donutData[0].value / total) * 100);
+    centerLabel = 'des sites conformes';
+    legend = [donutData[0]];
+    centerValue = donutData[0].value;
+  } else if (selected === 'alerte') {
+    filteredData = [donutData[1]];
+    percent = Math.round((donutData[1].value / total) * 100);
+    centerLabel = 'des sites en alerte';
+    legend = [donutData[1]];
+    centerValue = donutData[1].value;
+  } else if (selected === 'critique') {
+    filteredData = [donutData[2]];
+    percent = Math.round((donutData[2].value / total) * 100);
+    centerLabel = 'des sites critiques';
+    legend = [donutData[2]];
+    centerValue = donutData[2].value;
+  } else {
+    percent = Math.round((donutData[0].value / total) * 100);
+    centerLabel = 'des sites conformes';
+    legend = donutData;
+    centerValue = donutData[0].value;
+  }
+
+  // Légende dynamique
+  const legendBlock = (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      gap: 10,
+      background: 'rgba(245,247,250,0.7)',
+      borderRadius: 10,
+      padding: '10px 10px 10px 16px',
+      border: 'none',
+      minWidth: 120,
+      marginLeft: 24,
+    }}>
+      {legend.map((entry, idx) => (
+        <div key={entry.name} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          <span style={{ width: 13, height: 13, borderRadius: '50%', background: entry.color, display: 'inline-block', marginRight: 8, border: '1.5px solid #E6F7FB' }}></span>
+          <span style={{ color: '#888', fontSize: 14, fontWeight: 400, whiteSpace: 'nowrap', letterSpacing: 0.1 }}>{entry.label} ({entry.value})</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  // Label du donut (affiche le nombre de sites uniquement si tous les sites)
+  function renderCustomizedLabel({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) {
+    if (selected !== 'all') return null;
+    const RADIAN = Math.PI / 180;
+    const radius = outerRadius + 10;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    const label = donutData[index].value + (donutData[index].value > 1 ? ' sites' : ' site');
+    return (
+      <text x={x} y={y} fill="#111" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" fontSize={18} fontWeight={700}>
+        {label}
+      </text>
+    );
+  }
+
+  // Tooltip personnalisé
+  const CustomTooltip = ({ active, payload }) => {
+    if (active && payload && payload.length) {
+      const entry = payload[0].payload;
+      return (
+        <div style={{
+          background: '#fff',
+          border: `2px solid ${entry.color}`,
+          borderRadius: 8,
+          padding: '10px 18px',
+          color: '#222',
+          fontWeight: 500,
+          fontSize: 16,
+          boxShadow: '0 2px 8px #e0e0e0',
+        }}>
+          <span style={{ color: entry.color, fontWeight: 700, fontSize: 18, marginRight: 8 }}>●</span>
+          {entry.logements} logement{entry.logements > 1 ? 's' : ''} concernés<br/>
+          <span style={{ color: '#888', fontSize: 14 }}>{entry.label}</span>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div style={{
+      background: '#fff',
+      borderRadius: 16,
+      boxShadow: '0 2px 8px #e0e0e0',
+      border: '1.5px solid #e6e6e6',
+      padding: '0.4rem 1.1rem 0.4rem 1.1rem',
+      width: 900,
+      minWidth: 480,
+      height: 620,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 0,
+      justifyContent: 'space-between',
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+    }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+        <div style={{ fontWeight: 700, fontSize: 22, marginBottom: 6, color: '#595959' }}>Températures moyennes de mes sites</div>
+        <div style={{ marginBottom: 10, marginTop: 4 }}>
+          <ModernSelect
+            value={selected}
+            onChange={e => setSelected(e.target.value)}
+          >
+            <option value="all">Tous les sites</option>
+            <option value="conforme">Sites conformes</option>
+            <option value="alerte">Sites en alerte</option>
+            <option value="critique">Sites critiques</option>
+          </ModernSelect>
+        </div>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', marginTop: -18 }}>
+            {/* Donut au centre */}
+            <div style={{ width: 440, height: 440, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'visible', marginTop: -18 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Tooltip content={CustomTooltip} cursor={false} />
+                  <Pie
+                    key={selected}
+                    data={filteredData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={110}
+                    outerRadius={155}
+                    paddingAngle={2}
+                    dataKey="value"
+                    labelLine={false}
+                    label={renderCustomizedLabel}
+                    isAnimationActive={true}
+                    animationBegin={0}
+                    animationDuration={700}
+                    animateNewData={true}
+                  >
+                    {filteredData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              {/* Texte central statique */}
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  textAlign: 'center',
+                  pointerEvents: 'none',
+                }}
+              >
+                <div style={{ fontSize: 44, fontWeight: 700, color: '#222' }}>{percent}&nbsp;%</div>
+                <div style={{ fontSize: 22, color: '#222', fontWeight: 500, marginTop: 2 }}>{centerLabel}</div>
+              </div>
+            </div>
+            {/* Légende dynamique à droite */}
+            {legendBlock}
+          </div>
+          {/* Message d'alerte sous le donut, encore rapproché */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            marginTop: 0,
+            background: '#FFF7E6',
+            borderRadius: 12,
+            padding: '5px 14px',
+            fontSize: 17,
+            color: '#B26B00',
+            fontWeight: 500,
+            boxShadow: '0 1px 4px #f3e2c0',
+            maxWidth: 340,
+            marginLeft: 'auto',
+            marginRight: 'auto',
+          }}>
+            <span style={{ fontSize: 22, color: '#F7A600', marginRight: 4 }}>⚠️</span>
+            3 sites en alerte depuis plus de 3 jours
+          </div>
+        </div>
+      </div>
+      {/* Barre du bas avec sélection, alerte et boutons */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+        padding: '0 0.3rem',
+        marginTop: 0,
+        minHeight: 48,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}>
+        <div style={{ color: '#222', fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 220 }}>
+          Sélection test (10)
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button style={{ background: '#fff', border: '1.5px solid #e6e6e6', borderRadius: 8, padding: '8px 12px', fontSize: 20, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 40, maxWidth: 48 }}>⋯</button>
+          <button style={{ background: '#fff', color: '#222', border: '1.5px solid #222', borderRadius: 8, padding: '8px 18px', fontWeight: 'bold', fontSize: 15, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} onClick={() => navigate('/explorer', { state: { selected } })}>
+            Explorer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Fonction pour choisir une icône selon le type de site
+function getSiteIcon(nom) {
+  if (nom.includes('immeuble')) return '🏢';
+  if (nom.includes('maison')) return '🏠';
+  if (nom.includes('villa')) return '🏡';
+  if (nom.includes('residence')) return '🏬';
+  return '🏠';
+}
+
+function TableSites({ selection }) {
+  const [animate, setAnimate] = useState(false);
+  const [sort, setSort] = useState({ col: null, asc: true });
+  const navigate = useNavigate();
+  useEffect(() => {
+    setAnimate(true);
+    const timeout = setTimeout(() => setAnimate(false), 400);
+    return () => clearTimeout(timeout);
+  }, [selection]);
+  const filtered = selection === 'all' ? sitesData : sitesData.filter(s => s.categorie === selection);
+
+  // Tri dynamique
+  const sorted = [...filtered].sort((a, b) => {
+    if (!sort.col) return 0;
+    let v1 = a[sort.col], v2 = b[sort.col];
+    if (sort.col === 'temp') return sort.asc ? v1 - v2 : v2 - v1;
+    if (sort.col === 'logements') return sort.asc ? v1 - v2 : v2 - v1;
+    if (sort.col === 'date') {
+      // format JJ/MM/AAAA
+      const d1 = v1.split('/').reverse().join('-');
+      const d2 = v2.split('/').reverse().join('-');
+      return sort.asc ? d1.localeCompare(d2) : d2.localeCompare(d1);
+    }
+    if (sort.col === 'seuil') {
+      // Trie sur la valeur min du seuil
+      const n1 = parseFloat(v1);
+      const n2 = parseFloat(v2);
+      return sort.asc ? n1 - n2 : n2 - n1;
+    }
+    return 0;
+  });
+
+  // Flèche de tri
+  function SortArrow({ active, asc }) {
+    return active ? (
+      <span style={{ marginLeft: 6, color: '#3DB6E3', fontSize: 15, display: 'inline-block', verticalAlign: 'middle' }}>
+        <svg width="13" height="13" viewBox="0 0 20 20" style={{ transform: asc ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}><path d="M6 8L10 12L14 8" stroke="#3DB6E3" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+      </span>
+    ) : null;
+  }
+
+  return (
+    <div style={{ width: '100%', maxWidth: 1400, paddingLeft: '2.5rem', marginTop: 8 }}>
+      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 17, background: '#fff', borderRadius: 22, overflow: 'hidden', boxShadow: '0 4px 24px #e0e0e0', minWidth: 900 }}>
+        <thead>
+          <tr style={{ background: '#F0F4F8', color: '#222', fontWeight: 800, fontSize: 17, letterSpacing: 0.1 }}>
+            <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>
+              <span style={{ fontSize: 19, marginRight: 8, verticalAlign: 'middle' }}>🏷️</span>Nom du site
+            </th>
+            <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none', cursor: 'pointer' }} onClick={() => setSort(s => ({ col: 'temp', asc: s.col === 'temp' ? !s.asc : true }))}>
+              <span style={{ fontSize: 19, marginRight: 8, verticalAlign: 'middle' }}>🌡️</span>Temp. moyenne
+              <SortArrow active={sort.col === 'temp'} asc={sort.asc} />
+            </th>
+            <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>
+              <span style={{ fontSize: 19, marginRight: 8, verticalAlign: 'middle' }}>🟢</span>Statut
+            </th>
+            <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none', cursor: 'pointer' }} onClick={() => setSort(s => ({ col: 'seuil', asc: s.col === 'seuil' ? !s.asc : true }))}>
+              <span style={{ fontSize: 19, marginRight: 8, verticalAlign: 'middle' }}>📏</span>Seuils du site
+              <SortArrow active={sort.col === 'seuil'} asc={sort.asc} />
+            </th>
+            <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none', cursor: 'pointer' }} onClick={() => setSort(s => ({ col: 'logements', asc: s.col === 'logements' ? !s.asc : true }))}>
+              <span style={{ fontSize: 19, marginRight: 8, verticalAlign: 'middle' }}>🏠</span>Nb logements
+              <SortArrow active={sort.col === 'logements'} asc={sort.asc} />
+            </th>
+            <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none', cursor: 'pointer' }} onClick={() => setSort(s => ({ col: 'date', asc: s.col === 'date' ? !s.asc : true }))}>
+              <span style={{ fontSize: 19, marginRight: 8, verticalAlign: 'middle' }}>🕒</span>Dernière mesure
+              <SortArrow active={sort.col === 'date'} asc={sort.asc} />
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((site, idx) => (
+            <tr key={site.nom}
+              style={{
+                borderBottom: '1.5px solid #F3F4F6',
+                background: idx % 2 === 0 ? '#fff' : '#F7F9FB',
+                transition: 'background 0.18s, opacity 0.5s, transform 0.5s',
+                cursor: 'pointer',
+                opacity: animate ? 0 : 1,
+                transform: animate ? 'translateY(20px)' : 'translateY(0)',
+              }}
+              onClick={() => navigate(`/site/${site.nom}`)}
+              onMouseOver={e => e.currentTarget.style.background = '#E6F7FB'}
+              onMouseOut={e => e.currentTarget.style.background = idx % 2 === 0 ? '#fff' : '#F7F9FB'}
+            >
+              <td style={{ padding: '16px 28px', fontWeight: 700, fontSize: 19, color: '#222', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 22 }}>{getSiteIcon(site.nom)}</span>
+                {site.nom.replace(/_/g, ' ')}
+              </td>
+              <td style={{ padding: '16px 28px', fontWeight: 700, fontSize: 17 }}>{site.temp.toFixed(1)} °C</td>
+              <td style={{ padding: '16px 28px' }}>
+                <span style={{ background: STATUS_COLORS[site.categorie].bg, color: STATUS_COLORS[site.categorie].color, fontWeight: 700, borderRadius: 10, padding: '7px 22px', display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 17, boxShadow: '0 1px 4px #e0e0e0' }}>
+                  <span style={{ fontSize: 22 }}>{STATUS_COLORS[site.categorie].icon}</span> {STATUS_COLORS[site.categorie].label}
+                </span>
+              </td>
+              <td style={{ padding: '16px 28px', fontSize: 16 }}>{site.seuil}</td>
+              <td style={{ padding: '16px 28px', fontWeight: 600, fontSize: 16 }}>{site.logements}</td>
+              <td style={{ padding: '16px 28px', fontSize: 16 }}>{site.date}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Composant Explorer (squelette, à compléter)
+function ExplorerPage({ selected, setSelected }) {
+  const navigate = useNavigate();
+  // On utilise toujours la valeur du state local pour la sélection
+  return (
+    <div style={{ minHeight: '100vh', background: '#F7F9FB', fontFamily: 'Inter, Arial, sans-serif' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 2.5rem 1rem 2.5rem', background: '#fff', borderBottom: '1.5px solid #e6e6e6' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <button
+            onClick={() => navigate('/')}
+            style={{
+              background: '#3DB6E3',
+              border: 'none',
+              borderRadius: '50%',
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px #e0e0e0',
+              transition: 'background 0.18s, box-shadow 0.18s',
+              outline: 'none',
+              padding: 0,
+            }}
+            onMouseOver={e => { e.currentTarget.style.background = '#2699c7'; e.currentTarget.style.boxShadow = '0 4px 16px #b3e3fa'; }}
+            onMouseOut={e => { e.currentTarget.style.background = '#3DB6E3'; e.currentTarget.style.boxShadow = '0 2px 8px #e0e0e0'; }}
+            aria-label="Retour"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13 16L7 10L13 4" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <span style={{ fontWeight: 700, fontSize: 24, color: '#222' }}>{
+            selected === 'all' ? 'Tous les sites' :
+            selected === 'conforme' ? 'Sites conformes' :
+            selected === 'alerte' ? 'Sites en alerte' :
+            selected === 'critique' ? 'Sites critiques' : ''
+          }</span>
+        </div>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#E6F4FA', color: '#3DB6E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>RM</div>
+      </header>
+      <main style={{ maxWidth: '100vw', margin: 0, padding: '2.5rem 0' }}>
+        <div style={{ paddingLeft: '2.5rem' }}>
+          <div style={{ fontWeight: 700, fontSize: 22, color: '#595959', marginBottom: 18 }}>Température moyenne par sites</div>
+          <div style={{ marginBottom: 24 }}>
+            <ModernSelect value={selected} onChange={e => setSelected(e.target.value)}>
+              <option value="all">Tous les sites</option>
+              <option value="conforme">Sites conformes</option>
+              <option value="alerte">Sites en alerte</option>
+              <option value="critique">Sites critiques</option>
+            </ModernSelect>
+          </div>
+          <TableSites selection={selected} />
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Génère des données réalistes pour 30 jours en fonction du statut du site
+function generateSiteChartData(statut, siteNom) {
+  const days = 30;
+  const today = new Date();
+  const data = [];
+  const total = 50;
+  // Cas particuliers selon la consigne utilisateur
+  if (siteNom === 'immeuble_ancien_rouen') {
+    // Après le 08 juin, temp >= 24°C
+    let seuilTrouve = false;
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      let tempMoy;
+      if (!seuilTrouve && date === '08 juin') seuilTrouve = true;
+      if (seuilTrouve) {
+        tempMoy = 24 + Math.random() * 4; // 24-28°C
+      } else {
+        tempMoy = 20 + (Math.random() * 10); // 20-30°C
+      }
+      data.push({
+        date,
+        critique: tempMoy < 16 || tempMoy > 26 ? 10 : 0,
+        anormal: tempMoy >= 16 && tempMoy < 18 || tempMoy > 24 && tempMoy <= 26 ? 10 : 0,
+        conforme: tempMoy >= 18 && tempMoy <= 24 ? 30 : 0,
+        tempMoy: Math.round(tempMoy * 10) / 10,
+      });
+    }
+    return data;
+  }
+  if (siteNom === 'residence_luxe_tours') {
+    // Après le 06 juin, temp <= 16°C
+    let seuilTrouve = false;
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      let tempMoy;
+      if (!seuilTrouve && date === '06 juin') seuilTrouve = true;
+      if (seuilTrouve) {
+        tempMoy = 14 + Math.random() * 2; // 14-16°C
+      } else {
+        tempMoy = 18 + (Math.random() * 10); // 18-28°C
+      }
+      data.push({
+        date,
+        critique: tempMoy < 16 || tempMoy > 26 ? 10 : 0,
+        anormal: tempMoy >= 16 && tempMoy < 18 || tempMoy > 24 && tempMoy <= 26 ? 10 : 0,
+        conforme: tempMoy >= 18 && tempMoy <= 24 ? 30 : 0,
+        tempMoy: Math.round(tempMoy * 10) / 10,
+      });
+    }
+    return data;
+  }
+  if (siteNom === 'villa_eco_nantes') {
+    // Après le 06 juin, temp <= 16°C
+    let seuilTrouve = false;
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      let tempMoy;
+      if (!seuilTrouve && date === '06 juin') seuilTrouve = true;
+      if (seuilTrouve) {
+        tempMoy = 14 + Math.random() * 2; // 14-16°C
+      } else {
+        tempMoy = 18 + (Math.random() * 10); // 18-28°C
+      }
+      data.push({
+        date,
+        critique: tempMoy < 16 || tempMoy > 26 ? 10 : 0,
+        anormal: tempMoy >= 16 && tempMoy < 18 || tempMoy > 24 && tempMoy <= 26 ? 10 : 0,
+        conforme: tempMoy >= 18 && tempMoy <= 24 ? 30 : 0,
+        tempMoy: Math.round(tempMoy * 10) / 10,
+      });
+    }
+    return data;
+  }
+  if (siteNom === 'maison_ilot_angers') {
+    // Après le 06 juin, temp >= 24°C
+    let seuilTrouve = false;
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      let tempMoy;
+      if (!seuilTrouve && date === '06 juin') seuilTrouve = true;
+      if (seuilTrouve) {
+        tempMoy = 24 + Math.random() * 4; // 24-28°C
+      } else {
+        tempMoy = 18 + (Math.random() * 6); // 18-24°C
+      }
+      data.push({
+        date,
+        critique: tempMoy < 16 || tempMoy > 26 ? 10 : 0,
+        anormal: tempMoy >= 16 && tempMoy < 18 || tempMoy > 24 && tempMoy <= 26 ? 10 : 0,
+        conforme: tempMoy >= 18 && tempMoy <= 24 ? 30 : 0,
+        tempMoy: Math.round(tempMoy * 10) / 10,
+      });
+    }
+    return data;
+  }
+  if (statut === 'conforme') {
+    // Toujours conforme
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      data.push({
+        date,
+        critique: 0,
+        anormal: 0,
+        conforme: total,
+        tempMoy: 20 + (Math.random() * 4 - 2), // 18-22°C
+      });
+    }
+    return data;
+  }
+  if (statut === 'critique') {
+    // Génère une alerte fermée (jours 5 à 10), un point conforme (jours 11 à 12), puis une alerte ouverte (jours 20 à 29 sans retour en conforme)
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      let tempMoy, critique = 0, anormal = 0, conforme = 0;
+      if (i >= 20) {
+        // Alerte ouverte (fin de période) : forcer hors conforme
+        critique = Math.floor(Math.random() * 10 + 8); // 8-17
+        anormal = Math.floor(Math.random() * 6 + 2); // 2-7
+        conforme = total - critique - anormal;
+        // Toujours hors conforme : <18 ou >24
+        tempMoy = (Math.random() < 0.5) ? (15 + Math.random() * 2) : (25 + Math.random() * 2); // 15-17 ou 25-27°C
+      } else if (i >= 5 && i <= 10) {
+        // Alerte fermée
+        critique = Math.floor(Math.random() * 8 + 4); // 4-11
+        anormal = Math.floor(Math.random() * 6 + 2); // 2-7
+        conforme = total - critique - anormal;
+        tempMoy = 15 + (Math.random() * 2); // 15-17°C
+      } else if (i >= 11 && i <= 12) {
+        // Point conforme entre deux alertes
+        critique = 0;
+        anormal = 0;
+        conforme = total;
+        tempMoy = 18 + (Math.random() * 6); // 18-24°C inclus
+      } else {
+        // Conforme ou léger alerte
+        critique = 0;
+        anormal = Math.floor(Math.random() * 4 + 2); // 2-5
+        conforme = total - anormal;
+        tempMoy = 20 + (Math.random() * 4 - 2); // 18-22°C
+      }
+      data.push({
+        date,
+        critique,
+        anormal,
+        conforme,
+        tempMoy: Math.round(tempMoy * 10) / 10,
+      });
+    }
+    return data;
+  }
+  if (statut === 'alerte') {
+    // Génère une alerte ouverte (jours 25 à 29 sans retour en conforme), un point conforme (jours 14 à 15), et parfois une alerte fermée (jours 10 à 13)
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+      let tempMoy, critique = 0, anormal = 0, conforme = 0;
+      if (i >= 25) {
+        // Alerte ouverte (fin de période) : forcer hors conforme
+        critique = 0;
+        anormal = Math.floor(Math.random() * 10 + 8); // 8-17
+        conforme = total - anormal;
+        // Toujours hors conforme : <18 ou >24
+        tempMoy = (Math.random() < 0.5) ? (16 + Math.random() * 1.5) : (24.5 + Math.random() * 1.5); // 16-17.5 ou 24.5-26°C
+      } else if (i >= 10 && i <= 13 && Math.random() < 0.7) {
+        // Alerte fermée (aléatoire)
+        critique = 0;
+        anormal = Math.floor(Math.random() * 8 + 4); // 4-11
+        conforme = total - anormal;
+        tempMoy = (Math.random() < 0.5) ? (16.5 + Math.random() * 1.5) : (24.5 + Math.random() * 1.5);
+      } else if (i >= 14 && i <= 15) {
+        // Point conforme entre deux alertes
+        critique = 0;
+        anormal = 0;
+        conforme = total;
+        tempMoy = 18 + (Math.random() * 6); // 18-24°C inclus
+      } else {
+        // Conforme
+        critique = 0;
+        anormal = 0;
+        conforme = total;
+        tempMoy = 20 + (Math.random() * 4 - 2); // 18-22°C
+      }
+      data.push({
+        date,
+        critique,
+        anormal,
+        conforme,
+        tempMoy: Math.round(tempMoy * 10) / 10,
+      });
+    }
+    return data;
+  }
+  // fallback : conforme
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+    data.push({
+      date,
+      critique: 0,
+      anormal: 0,
+      conforme: total,
+      tempMoy: 20 + (Math.random() * 4 - 2),
+    });
+  }
+  return data;
+}
+
+// Squelette page de détail d'un site
+function SiteDetailPage() {
+  const { siteId } = useParams();
+  const site = sitesData.find(s => s.nom === siteId);
+  const navigate = useNavigate();
+  // Utilise la data stockée pour le site
+  const chartData = site?.chartData || [];
+  // Calcul de la température moyenne globale sur 30 jours
+  const tempMoyGlobale = chartData.length ? (chartData.reduce((acc, d) => acc + d.tempMoy, 0) / chartData.length).toFixed(1) : '--';
+
+  // Détection des alertes (franchissement seuils)
+  let filteredAlerts = [];
+  if (site?.categorie !== 'conforme') {
+    const alerts = [];
+    let inAlert = false;
+    let alertStart = null;
+    chartData.forEach((d, i) => {
+      const t = d.tempMoy;
+      const isConforme = t >= 18 && t <= 24;
+      if (!isConforme) {
+        if (!inAlert) {
+          // On n'entre en alerte que si on n'est pas déjà en alerte
+          inAlert = true;
+          alertStart = i;
+        }
+        // Si déjà en alerte, on ne fait rien (pas de nouveau début)
+      } else {
+        if (inAlert) {
+          // On ferme l'alerte dès le premier retour en conforme
+          inAlert = false;
+          alerts.push({ start: alertStart, end: i }); // Fin d'alerte sur ce point conforme
+          alertStart = null;
+        }
+      }
+    });
+    // Si une alerte est en cours à la fin, on la garde ouverte
+    if (inAlert && alertStart !== null) alerts.push({ start: alertStart, end: null });
+    filteredAlerts = alerts;
+  } else {
+    filteredAlerts = []; // Aucun point d'alerte ni pastille sur les conformes
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#F7F9FB', fontFamily: 'Inter, Arial, sans-serif' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 2.5rem 1rem 2.5rem', background: '#fff', borderBottom: '1.5px solid #e6e6e6' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              background: '#3DB6E3', border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 8px #e0e0e0', transition: 'background 0.18s, box-shadow 0.18s', outline: 'none', padding: 0,
+            }}
+            onMouseOver={e => { e.currentTarget.style.background = '#2699c7'; e.currentTarget.style.boxShadow = '0 4px 16px #b3e3fa'; }}
+            onMouseOut={e => { e.currentTarget.style.background = '#3DB6E3'; e.currentTarget.style.boxShadow = '0 2px 8px #e0e0e0'; }}
+            aria-label="Retour"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13 16L7 10L13 4" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        {/* Icône utilisateur identique à la page tableau */}
+        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#E6F4FA', color: '#3DB6E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>RM</div>
+      </header>
+      <main style={{ maxWidth: 1500, margin: '0 auto', padding: '2.5rem 0 2.5rem 2.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 36 }}>
+          <div style={{ flex: 'none', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <span style={{ fontSize: 38, color: '#3DB6E3' }}>📈</span>
+              <span style={{ fontWeight: 800, fontSize: 36, color: '#222' }}>Température moyenne</span>
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 26, color: '#444', marginBottom: 2 }}>{site?.nom.replace(/_/g, ' ') || ''} - Immeuble haussmannien avec balcon filant</div>
+            <div style={{ color: '#888', fontSize: 21, marginBottom: 18 }}>6 Place de l'Hôtel de Ville, 75004 Paris</div>
+            {/* Température moyenne globale */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+              <span style={{ fontSize: 32, color: '#3DB6E3', fontWeight: 700 }}>🌡️</span>
+              <span style={{ fontSize: 48, color: '#3DB6E3', fontWeight: 800 }}>{tempMoyGlobale} °C</span>
+              <span style={{ color: '#888', fontSize: 22, fontWeight: 500, marginLeft: 8 }}>moyenne sur 30 jours</span>
+            </div>
+            {/* Graphique avancé avec aires de seuils et courbe */}
+            <div style={{ width: 1160, height: 520, background: '#fff', borderRadius: 18, border: '1.5px solid #e6e6e6', marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px #e0e0e0' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 18, right: 18, left: 0, bottom: 18 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  {/* Aires de seuils avec plus d'opacité */}
+                  <ReferenceArea y1={0} y2={16} fill="#FF204E44" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={16} y2={18} fill="#FF660044" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={18} y2={24} fill="#00DCFA44" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={24} y2={26} fill="#FF660044" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={26} y2={40} fill="#FF204E44" ifOverflow="extendDomain" />
+                  <XAxis dataKey="date" tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 40]} tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} unit="°C" />
+                  <Tooltip formatter={(value, name) => [`${value} °C`, 'Temp. moyenne']} />
+                  <Line type="monotone" dataKey="tempMoy" stroke="#3DB6E3" strokeWidth={6} dot={false} name="Temp. moyenne" style={{ filter: 'drop-shadow(0px 2px 4px #3DB6E355)' }} />
+                  {/* Marqueurs d'alerte début/fin distincts, sans texte, fin en bleu, côte à côte si même jour */}
+                  {filteredAlerts.map((a, i) => {
+                    const tStart = chartData[a.start]?.tempMoy;
+                    const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
+                    const isStartHorsConforme = tStart !== undefined && (tStart < 18 || tStart > 24);
+                    const isEndConforme = tEnd !== undefined && tEnd >= 18 && tEnd <= 24;
+                    const dots = [];
+                    // Début d'alerte (rouge) toujours affiché si hors conforme
+                    if (isStartHorsConforme) {
+                      dots.push(<ReferenceDot key={`start-${i}`} x={chartData[a.start].date} y={tStart} r={9} fill="#FF204E" stroke="#fff" strokeWidth={3} />);
+                    }
+                    // Fin d'alerte (bleu) uniquement si l'alerte est fermée (end != null et pas le dernier point du chart)
+                    if (a.end !== null && a.end !== chartData.length - 1 && isEndConforme) {
+                      dots.push(<ReferenceDot key={`end-${i}`} x={chartData[a.end].date} y={tEnd} r={9} fill="#00DCFA" stroke="#fff" strokeWidth={3} />);
+                    }
+                    return dots;
+                  })}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Légende graphique des seuils + alertes */}
+            <div style={{ display: 'flex', gap: 32, marginTop: 18, marginLeft: 8, alignItems: 'center', maxWidth: 1160 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#00DCFA', opacity: 0.44, display: 'inline-block', border: '1.5px solid #B6F0FF' }}></span>
+                <span style={{ color: '#00DCFA', fontWeight: 700, fontSize: 16 }}>Zone conforme (18–24°C)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF6600', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6B3' }}></span>
+                <span style={{ color: '#FF6600', fontWeight: 700, fontSize: 16 }}>Zone alerte (16–18°C, 24–26°C)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF204E', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6E0' }}></span>
+                <span style={{ color: '#FF204E', fontWeight: 700, fontSize: 16 }}>Zone critique ({'<'}16°C, {'>'}26°C)</span>
+              </div>
+              {/* Légende alertes */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#FF204E', border: '3px solid #fff', display: 'inline-block', verticalAlign: 'middle' }}></span>
+                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Début d'alerte</span>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#00DCFA', border: '3px solid #fff', display: 'inline-block', marginLeft: 18, verticalAlign: 'middle' }}></span>
+                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Fin d'alerte</span>
+              </div>
+            </div>
+          </div>
+          {/* Colonne droite : carte + journal alignés en haut du graphique */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 520, minWidth: 400, maxWidth: 400 }}>
+            {/* Carte alerte à droite */}
+            <div style={{ width: 400, background: site?.categorie === 'critique' ? '#FFE6E6' : site?.categorie === 'alerte' ? '#FFF3E6' : '#E6F7FB', borderRadius: 16, padding: '1.2rem 1.5rem 1.1rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: site?.categorie === 'critique' ? '0 1px 4px #f3e2c0' : '0 1px 4px #ffe6b3', border: site?.categorie === 'critique' ? '1.2px solid #FFD6E0' : site?.categorie === 'alerte' ? '1.2px solid #FFD6B3' : '1.2px solid #B6F0FF', minHeight: 0, justifyContent: 'center', marginBottom: 14 }}>
+              {/* Badge dynamique */}
+              {site?.categorie === 'critique' ? (
+                <div style={{ background: '#FF204E', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, marginTop: 2 }}>
+                  <span style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>!</span>
+                </div>
+              ) : site?.categorie === 'alerte' ? (
+                <div style={{ background: '#FF6600', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, marginTop: 2 }}>
+                  <span style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>!</span>
+                </div>
+              ) : (
+                <div style={{ background: '#E6F7FB', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, marginTop: 2 }}>
+                  <span style={{ color: '#00DCFA', fontSize: 15, fontWeight: 700 }}>❤</span>
+                </div>
+              )}
+              {/* Titre dynamique */}
+              <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 6, color: site?.categorie === 'critique' ? '#FF204E' : site?.categorie === 'alerte' ? '#FF6600' : '#00DCFA', textAlign: 'center' }}>
+                {site?.categorie === 'critique' ? 'Alerte critique' : site?.categorie === 'alerte' ? 'Alerte warning' : 'Conforme'}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: '#222', marginBottom: 2, textAlign: 'center' }}>{site?.logements} logement{site?.logements > 1 ? 's' : ''} {'<'} 18 °C</div>
+              <div style={{ fontSize: 15, color: '#444', marginBottom: 10, textAlign: 'center' }}>24 % en dehors des seuils</div>
+              <button style={{ border: '1.2px solid #bbb', borderRadius: 8, background: '#fff', color: '#222', fontWeight: 700, fontSize: 15, padding: '8px 18px', cursor: 'pointer', marginTop: 2, minWidth: 220 }}>Voir les logements concernés</button>
+            </div>
+            {/* Journal d'alerte scrollable, hauteur max = graphique */}
+            <div style={{ width: 400, background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px #e0e0e0', padding: '1.1rem 1.2rem', flex: 1, overflowY: 'auto', maxHeight: 400 }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: '#222', marginBottom: 10, textAlign: 'left' }}>Journal des alertes</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+                <thead>
+                  <tr style={{ color: '#888', fontWeight: 700, fontSize: 14 }}>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>#</th>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Nature</th>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Date</th>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAlerts.length === 0 ? (
+                    <tr><td colSpan={4} style={{ color: '#aaa', textAlign: 'center', padding: 12 }}>Aucune alerte</td></tr>
+                  ) : (
+                    filteredAlerts.map((a, i) => {
+                      const tStart = chartData[a.start]?.tempMoy;
+                      const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
+                      const dateStart = chartData[a.start]?.date;
+                      const dateEnd = a.end !== null ? chartData[a.end]?.date : null;
+                      let nature = '';
+                      if (tStart !== undefined) nature = tStart < 18 ? 'Seuil bas' : tStart > 24 ? 'Seuil haut' : '';
+                      let statut = 'Commencée';
+                      let date = dateStart;
+                      if (a.end !== null) {
+                        statut = 'Terminée';
+                        date = dateStart + ' → ' + dateEnd;
+                      } else if (a.end === null) {
+                        statut = 'En cours';
+                      }
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '4px 0', fontWeight: 700, color: '#888' }}>#{i + 1}</td>
+                          <td style={{ padding: '4px 0', color: nature === 'Seuil haut' ? '#FF204E' : '#3DB6E3', fontWeight: 700 }}>{nature}</td>
+                          <td style={{ padding: '4px 0', color: '#444' }}>{date}</td>
+                          <td style={{ padding: '4px 0', color: statut === 'En cours' ? '#FF6600' : statut === 'Terminée' ? '#00DCFA' : '#888', fontWeight: 700 }}>{statut}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Page d'accueil complète avec header, onglets, fond, etc.
+function DashboardPage({ selected, setSelected, navigate }) {
+  return (
+    <div style={{ minHeight: '100vh', background: '#F7F9FB', fontFamily: 'Inter, Arial, sans-serif' }}>
+      {/* Header */}
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 2rem 0.7rem 2rem', background: '#fff', borderBottom: '1.5px solid #e6e6e6' }}>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <span style={{ fontWeight: 700, fontSize: 24, color: '#222', letterSpacing: '-1px' }}>IntentMAX</span>
+          <span style={{ background: '#3DB6E3', color: '#fff', fontWeight: 700, fontSize: 13, borderRadius: 6, padding: '2px 10px', marginLeft: 10 }}>Beta</span>
+        </div>
+        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#E6F4FA', color: '#3DB6E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>RM</div>
+      </header>
+      {/* Onglets stylés comme la spec */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '0 2rem', background: '#fff', borderBottom: '1.5px solid #e6e6e6', gap: 16, marginTop: 8 }}>
+        <button style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: '#CDF6FE',
+          border: 'none',
+          borderTop: '2px solid #00DCFA',
+          borderRadius: 8,
+          padding: '10px 24px',
+          fontWeight: 700,
+          fontSize: 18,
+          color: '#222',
+          marginRight: 8,
+          gap: 16,
+          boxShadow: '0 2px 8px #e0e0e0',
+          cursor: 'pointer',
+          height: 44,
+        }}>
+          Tableau de bord
+        </button>
+        <button style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: 'transparent',
+          border: 'none',
+          borderRadius: 8,
+          padding: '10px 24px',
+          fontWeight: 700,
+          fontSize: 18,
+          color: '#222',
+          gap: 16,
+          height: 44,
+          cursor: 'pointer',
+        }}>
+          Catalogue d'indicateurs
+        </button>
+      </div>
+      {/* Zone centrale pour accueillir les indicateurs */}
+      <main style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'stretch', minHeight: 'calc(100vh - 100px)', padding: '1.2rem 0' }}>
+        <div style={{ width: '100vw', minHeight: 400, display: 'flex', gap: 32, paddingLeft: '2.5rem' }}>
+          <div style={{ width: 900, height: 700 }}>
+            <TemperatureIndicator selected={selected} setSelected={setSelected} navigate={navigate} />
+          </div>
+          <div style={{ width: '50vw', height: '100%' }}></div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function App() {
+  const [selected, setSelected] = React.useState('all');
+  const navigate = useNavigate();
+  return (
+    <Routes>
+      <Route path="/" element={<DashboardPage selected={selected} setSelected={setSelected} navigate={navigate} />} />
+      <Route path="/explorer" element={<ExplorerPage selected={selected} setSelected={setSelected} />} />
+      <Route path="/site/:siteId" element={<SiteDetailPage />} />
+    </Routes>
+  );
+}
+
+// Wrapping with Router
+export default function WrappedApp() {
+  return (
+    <Router>
+      <App />
+    </Router>
+  );
+}
