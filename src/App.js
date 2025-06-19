@@ -78,11 +78,6 @@ function ModernSelect({ value, onChange, children, style = {} }) {
 }
 
 function TemperatureIndicator({ selected, setSelected, navigate }) {
-  const [animateText, setAnimateText] = useState(false);
-
-  // Plus d'effet de fondu sur le texte central, on va animer le donut
-
-  // Filtrage des données selon la sélection
   let filteredData = donutData;
   let total = donutData.reduce((acc, d) => acc + d.value, 0);
   let percent = 70;
@@ -700,213 +695,216 @@ function generateSiteChartData(statut, siteNom) {
   return data;
 }
 
-// Squelette page de détail d'un site
-function SiteDetailPage() {
-  const { siteId } = useParams();
+// Fonction pour générer des noms de logements réalistes
+const generateLogementName = (index, etage) => {
+  const types = ['Studio', 'T1', 'T2', 'T3', 'T4', 'T5'];
+  const orientations = ['Nord', 'Sud', 'Est', 'Ouest', 'Nord-Est', 'Nord-Ouest', 'Sud-Est', 'Sud-Ouest'];
+  const type = types[Math.floor(Math.random() * types.length)];
+  const orientation = orientations[Math.floor(Math.random() * orientations.length)];
+  return `${type} ${orientation} - ${etage}e étage n°${index}`;
+};
+
+// Données des logements pour la heatmap
+const generateLogementsData = (siteId, nbLogements) => {
+  const days = 30;
+  const today = new Date();
+  const logements = [];
   const site = sitesData.find(s => s.nom === siteId);
-  const navigate = useNavigate();
-  // Utilise la data stockée pour le site
-  const chartData = site?.chartData || [];
-  // Calcul de la température moyenne globale sur 30 jours
-  const tempMoyGlobale = chartData.length ? (chartData.reduce((acc, d) => acc + d.tempMoy, 0) / chartData.length).toFixed(1) : '--';
-
-  // Détection des alertes (franchissement seuils)
-  let filteredAlerts = [];
-  if (site?.categorie !== 'conforme') {
-    const alerts = [];
-    let inAlert = false;
-    let alertStart = null;
-    chartData.forEach((d, i) => {
-      const t = d.tempMoy;
-      const isConforme = t >= 18 && t <= 24;
-      if (!isConforme) {
-        if (!inAlert) {
-          // On n'entre en alerte que si on n'est pas déjà en alerte
-          inAlert = true;
-          alertStart = i;
-        }
-        // Si déjà en alerte, on ne fait rien (pas de nouveau début)
-      } else {
-        if (inAlert) {
-          // On ferme l'alerte dès le premier retour en conforme
-          inAlert = false;
-          alerts.push({ start: alertStart, end: i }); // Fin d'alerte sur ce point conforme
-          alertStart = null;
-        }
-      }
-    });
-    // Si une alerte est en cours à la fin, on la garde ouverte
-    if (inAlert && alertStart !== null) alerts.push({ start: alertStart, end: null });
-    filteredAlerts = alerts;
-  } else {
-    filteredAlerts = []; // Aucun point d'alerte ni pastille sur les conformes
+  
+  // Calcul du nombre de logements affectés selon le statut du site
+  let nbLogementsAffectes = 0;
+  if (site.categorie === 'critique') {
+    // 70% des logements sont affectés en critique
+    nbLogementsAffectes = Math.ceil(nbLogements * 0.7);
+  } else if (site.categorie === 'alerte') {
+    // 40% des logements sont affectés en alerte
+    nbLogementsAffectes = Math.ceil(nbLogements * 0.4);
   }
+  
+  // Répartition des logements par étage
+  const maxEtages = 8;
+  const logementsParEtage = Math.ceil(nbLogements / maxEtages);
+  
+  let logementIndex = 1;
+  for (let etage = 1; etage <= maxEtages && logementIndex <= nbLogements; etage++) {
+    for (let i = 1; i <= logementsParEtage && logementIndex <= nbLogements; i++) {
+      const logement = {
+        id: `${siteId}_log${logementIndex}`,
+        nom: generateLogementName(i, etage),
+        temperatures: []
+      };
+      
+      // Détermine si ce logement est affecté par le problème
+      const isAffected = logementIndex <= nbLogementsAffectes;
+      
+      for (let j = days - 1; j >= 0; j--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - j);
+        const date = d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+        
+        let temp;
+        if (site.categorie === 'critique' && isAffected) {
+          // Logements critiques : température < 16°C ou > 26°C
+          if (site.nom === 'immeuble_ancien_rouen') {
+            // Cas spécial : après le 08 juin, temp >= 24°C
+            const isAfter8June = new Date('2025-06-08') <= d;
+            temp = isAfter8June ? 26 + Math.random() * 2 : 20 + Math.random() * 4;
+          } else {
+            temp = Math.random() < 0.7 ? 15 + Math.random() : 26 + Math.random() * 2;
+          }
+        } else if (site.categorie === 'alerte' && isAffected) {
+          // Logements en alerte : température entre 16-18°C ou 24-26°C
+          if (site.nom === 'residence_luxe_tours' || site.nom === 'villa_eco_nantes') {
+            // Cas spécial : après le 06 juin, temp <= 16°C
+            const isAfter6June = new Date('2025-06-06') <= d;
+            temp = isAfter6June ? 16 + Math.random() * 1.5 : 20 + Math.random() * 4;
+          } else if (site.nom === 'maison_ilot_angers') {
+            // Cas spécial : après le 06 juin, temp >= 24°C
+            const isAfter6June = new Date('2025-06-06') <= d;
+            temp = isAfter6June ? 24 + Math.random() * 1.5 : 20 + Math.random() * 4;
+          } else {
+            temp = Math.random() < 0.6 ? 
+              (Math.random() < 0.5 ? 16 + Math.random() * 2 : 24 + Math.random() * 2) : 
+              20 + Math.random() * 4;
+          }
+        } else {
+          // Logements conformes : température entre 18-24°C
+          temp = 18 + Math.random() * 6;
+        }
+        
+        logement.temperatures.push({
+          date,
+          temp: Math.round(temp * 10) / 10
+        });
+      }
+      
+      logements.push(logement);
+      logementIndex++;
+    }
+  }
+  return logements;
+};
 
+function LogementsHeatmap() {
+  const { siteId } = useParams();
+  const navigate = useNavigate();
+  const site = sitesData.find(s => s.nom === siteId);
+  const [logements] = useState(() => generateLogementsData(siteId, site?.logements || 0));
+  
+  // Obtenir les dates uniques pour les colonnes
+  const dates = logements[0]?.temperatures.map(t => t.date) || [];
+  
+  // Fonction pour déterminer la couleur de la cellule
+  const getCellColor = (temp) => {
+    if (temp < 16 || temp > 26) return { bg: '#FF204E44', border: '#FFD6E0' }; // Critique
+    if (temp < 18 || temp > 24) return { bg: '#FF660044', border: '#FFD6B3' }; // Alerte
+    return { bg: '#00DCFA44', border: '#B6F0FF' }; // Conforme
+  };
+  
   return (
     <div style={{ minHeight: '100vh', background: '#F7F9FB', fontFamily: 'Inter, Arial, sans-serif' }}>
+      {/* Header */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 2.5rem 1rem 2.5rem', background: '#fff', borderBottom: '1.5px solid #e6e6e6' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
           <button
             onClick={() => navigate(-1)}
             style={{
-              background: '#3DB6E3', border: 'none', borderRadius: '50%', width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 2px 8px #e0e0e0', transition: 'background 0.18s, box-shadow 0.18s', outline: 'none', padding: 0,
+              background: '#3DB6E3',
+              border: 'none',
+              borderRadius: '50%',
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px #e0e0e0',
+              transition: 'background 0.18s, box-shadow 0.18s',
+              outline: 'none',
+              padding: 0,
             }}
             onMouseOver={e => { e.currentTarget.style.background = '#2699c7'; e.currentTarget.style.boxShadow = '0 4px 16px #b3e3fa'; }}
             onMouseOut={e => { e.currentTarget.style.background = '#3DB6E3'; e.currentTarget.style.boxShadow = '0 2px 8px #e0e0e0'; }}
             aria-label="Retour"
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M13 16L7 10L13 4" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </button>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 24, color: '#222', marginBottom: 4 }}>Températures par logement</div>
+            <div style={{ color: '#666', fontSize: 16 }}>{site?.nom.replace(/_/g, ' ')} - {site?.logements} logements</div>
+          </div>
         </div>
-        {/* Icône utilisateur identique à la page tableau */}
-        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#E6F4FA', color: '#3DB6E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>RM</div>
       </header>
-      <main style={{ maxWidth: 1500, margin: '0 auto', padding: '2.5rem 0 2.5rem 2.5rem' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 36 }}>
-          <div style={{ flex: 'none', minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-              <span style={{ fontSize: 38, color: '#3DB6E3' }}>📈</span>
-              <span style={{ fontWeight: 800, fontSize: 36, color: '#222' }}>Température moyenne</span>
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 26, color: '#444', marginBottom: 2 }}>{site?.nom.replace(/_/g, ' ') || ''} - Immeuble haussmannien avec balcon filant</div>
-            <div style={{ color: '#888', fontSize: 21, marginBottom: 18 }}>6 Place de l'Hôtel de Ville, 75004 Paris</div>
-            {/* Température moyenne globale */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
-              <span style={{ fontSize: 32, color: '#3DB6E3', fontWeight: 700 }}>🌡️</span>
-              <span style={{ fontSize: 48, color: '#3DB6E3', fontWeight: 800 }}>{tempMoyGlobale} °C</span>
-              <span style={{ color: '#888', fontSize: 22, fontWeight: 500, marginLeft: 8 }}>moyenne sur 30 jours</span>
-            </div>
-            {/* Graphique avancé avec aires de seuils et courbe */}
-            <div style={{ width: 1160, height: 520, background: '#fff', borderRadius: 18, border: '1.5px solid #e6e6e6', marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px #e0e0e0' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 18, right: 18, left: 0, bottom: 18 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  {/* Aires de seuils avec plus d'opacité */}
-                  <ReferenceArea y1={0} y2={16} fill="#FF204E44" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={16} y2={18} fill="#FF660044" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={18} y2={24} fill="#00DCFA44" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={24} y2={26} fill="#FF660044" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={26} y2={40} fill="#FF204E44" ifOverflow="extendDomain" />
-                  <XAxis dataKey="date" tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 40]} tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} unit="°C" />
-                  <Tooltip formatter={(value, name) => [`${value} °C`, 'Temp. moyenne']} />
-                  <Line type="monotone" dataKey="tempMoy" stroke="#3DB6E3" strokeWidth={6} dot={false} name="Temp. moyenne" style={{ filter: 'drop-shadow(0px 2px 4px #3DB6E355)' }} />
-                  {/* Marqueurs d'alerte début/fin distincts, sans texte, fin en bleu, côte à côte si même jour */}
-                  {filteredAlerts.map((a, i) => {
-                    const tStart = chartData[a.start]?.tempMoy;
-                    const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
-                    const isStartHorsConforme = tStart !== undefined && (tStart < 18 || tStart > 24);
-                    const isEndConforme = tEnd !== undefined && tEnd >= 18 && tEnd <= 24;
-                    const dots = [];
-                    // Début d'alerte (rouge) toujours affiché si hors conforme
-                    if (isStartHorsConforme) {
-                      dots.push(<ReferenceDot key={`start-${i}`} x={chartData[a.start].date} y={tStart} r={9} fill="#FF204E" stroke="#fff" strokeWidth={3} />);
-                    }
-                    // Fin d'alerte (bleu) uniquement si l'alerte est fermée (end != null et pas le dernier point du chart)
-                    if (a.end !== null && a.end !== chartData.length - 1 && isEndConforme) {
-                      dots.push(<ReferenceDot key={`end-${i}`} x={chartData[a.end].date} y={tEnd} r={9} fill="#00DCFA" stroke="#fff" strokeWidth={3} />);
-                    }
-                    return dots;
+      
+      {/* Main content */}
+      <main style={{ padding: '2rem 2.5rem' }}>
+        {/* Légende */}
+        <div style={{ display: 'flex', gap: 24, marginBottom: 24, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 22, height: 22, borderRadius: 6, background: '#00DCFA44', border: '1.5px solid #B6F0FF', display: 'inline-block' }}></span>
+            <span style={{ color: '#00DCFA', fontWeight: 700, fontSize: 15 }}>Conforme (18–24°C)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF660044', border: '1.5px solid #FFD6B3', display: 'inline-block' }}></span>
+            <span style={{ color: '#FF6600', fontWeight: 700, fontSize: 15 }}>Alerte (16–18°C, 24–26°C)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF204E44', border: '1.5px solid #FFD6E0', display: 'inline-block' }}></span>
+            <span style={{ color: '#FF204E', fontWeight: 700, fontSize: 15 }}>Critique ({'<'}16°C, {'>'}26°C)</span>
+          </div>
+        </div>
+        
+        {/* Heatmap */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: '1.5rem', boxShadow: '0 2px 8px #e0e0e0', overflowX: 'auto' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 2, minWidth: '100%' }}>
+            <thead>
+              <tr>
+                <th style={{ padding: '8px 16px', textAlign: 'left', fontWeight: 700, fontSize: 15, color: '#666', minWidth: 140 }}>Logement</th>
+                {dates.map(date => (
+                  <th key={date} style={{ padding: '8px 4px', textAlign: 'center', fontWeight: 600, fontSize: 14, color: '#888', minWidth: 40 }}>
+                    {date}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {logements.map(logement => (
+                <tr key={logement.id}>
+                  <td style={{ padding: '8px 16px', fontWeight: 600, fontSize: 15, color: '#222' }}>{logement.nom}</td>
+                  {logement.temperatures.map((t, idx) => {
+                    const colors = getCellColor(t.temp);
+                    return (
+                      <td key={idx} style={{ position: 'relative' }}>
+                        <div style={{
+                          width: 40,
+                          height: 40,
+                          background: colors.bg,
+                          border: `1.5px solid ${colors.border}`,
+                          borderRadius: 8,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: '#222',
+                          cursor: 'pointer',
+                          transition: 'transform 0.2s',
+                        }}
+                        onMouseOver={e => e.currentTarget.style.transform = 'scale(1.1)'}
+                        onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
+                        title={`${t.date}: ${t.temp}°C`}
+                        >
+                          {t.temp}
+                        </div>
+                      </td>
+                    );
                   })}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-            {/* Légende graphique des seuils + alertes */}
-            <div style={{ display: 'flex', gap: 32, marginTop: 18, marginLeft: 8, alignItems: 'center', maxWidth: 1160 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#00DCFA', opacity: 0.44, display: 'inline-block', border: '1.5px solid #B6F0FF' }}></span>
-                <span style={{ color: '#00DCFA', fontWeight: 700, fontSize: 16 }}>Zone conforme (18–24°C)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF6600', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6B3' }}></span>
-                <span style={{ color: '#FF6600', fontWeight: 700, fontSize: 16 }}>Zone alerte (16–18°C, 24–26°C)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF204E', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6E0' }}></span>
-                <span style={{ color: '#FF204E', fontWeight: 700, fontSize: 16 }}>Zone critique ({'<'}16°C, {'>'}26°C)</span>
-              </div>
-              {/* Légende alertes */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
-                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#FF204E', border: '3px solid #fff', display: 'inline-block', verticalAlign: 'middle' }}></span>
-                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Début d'alerte</span>
-                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#00DCFA', border: '3px solid #fff', display: 'inline-block', marginLeft: 18, verticalAlign: 'middle' }}></span>
-                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Fin d'alerte</span>
-              </div>
-            </div>
-          </div>
-          {/* Colonne droite : carte + journal alignés en haut du graphique */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 520, minWidth: 400, maxWidth: 400 }}>
-            {/* Carte alerte à droite */}
-            <div style={{ width: 400, background: site?.categorie === 'critique' ? '#FFE6E6' : site?.categorie === 'alerte' ? '#FFF3E6' : '#E6F7FB', borderRadius: 16, padding: '1.2rem 1.5rem 1.1rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: site?.categorie === 'critique' ? '0 1px 4px #f3e2c0' : '0 1px 4px #ffe6b3', border: site?.categorie === 'critique' ? '1.2px solid #FFD6E0' : site?.categorie === 'alerte' ? '1.2px solid #FFD6B3' : '1.2px solid #B6F0FF', minHeight: 0, justifyContent: 'center', marginBottom: 14 }}>
-              {/* Badge dynamique */}
-              {site?.categorie === 'critique' ? (
-                <div style={{ background: '#FF204E', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, marginTop: 2 }}>
-                  <span style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>!</span>
-                </div>
-              ) : site?.categorie === 'alerte' ? (
-                <div style={{ background: '#FF6600', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, marginTop: 2 }}>
-                  <span style={{ color: '#fff', fontSize: 17, fontWeight: 700 }}>!</span>
-                </div>
-              ) : (
-                <div style={{ background: '#E6F7FB', borderRadius: '50%', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10, marginTop: 2 }}>
-                  <span style={{ color: '#00DCFA', fontSize: 15, fontWeight: 700 }}>❤</span>
-                </div>
-              )}
-              {/* Titre dynamique */}
-              <div style={{ fontWeight: 800, fontSize: 20, marginBottom: 6, color: site?.categorie === 'critique' ? '#FF204E' : site?.categorie === 'alerte' ? '#FF6600' : '#00DCFA', textAlign: 'center' }}>
-                {site?.categorie === 'critique' ? 'Alerte critique' : site?.categorie === 'alerte' ? 'Alerte warning' : 'Conforme'}
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 16, color: '#222', marginBottom: 2, textAlign: 'center' }}>{site?.logements} logement{site?.logements > 1 ? 's' : ''} {'<'} 18 °C</div>
-              <div style={{ fontSize: 15, color: '#444', marginBottom: 10, textAlign: 'center' }}>24 % en dehors des seuils</div>
-              <button style={{ border: '1.2px solid #bbb', borderRadius: 8, background: '#fff', color: '#222', fontWeight: 700, fontSize: 15, padding: '8px 18px', cursor: 'pointer', marginTop: 2, minWidth: 220 }}>Voir les logements concernés</button>
-            </div>
-            {/* Journal d'alerte scrollable, hauteur max = graphique */}
-            <div style={{ width: 400, background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px #e0e0e0', padding: '1.1rem 1.2rem', flex: 1, overflowY: 'auto', maxHeight: 400 }}>
-              <div style={{ fontWeight: 800, fontSize: 18, color: '#222', marginBottom: 10, textAlign: 'left' }}>Journal des alertes</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
-                <thead>
-                  <tr style={{ color: '#888', fontWeight: 700, fontSize: 14 }}>
-                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>#</th>
-                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Nature</th>
-                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Date</th>
-                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Statut</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredAlerts.length === 0 ? (
-                    <tr><td colSpan={4} style={{ color: '#aaa', textAlign: 'center', padding: 12 }}>Aucune alerte</td></tr>
-                  ) : (
-                    filteredAlerts.map((a, i) => {
-                      const tStart = chartData[a.start]?.tempMoy;
-                      const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
-                      const dateStart = chartData[a.start]?.date;
-                      const dateEnd = a.end !== null ? chartData[a.end]?.date : null;
-                      let nature = '';
-                      if (tStart !== undefined) nature = tStart < 18 ? 'Seuil bas' : tStart > 24 ? 'Seuil haut' : '';
-                      let statut = 'Commencée';
-                      let date = dateStart;
-                      if (a.end !== null) {
-                        statut = 'Terminée';
-                        date = dateStart + ' → ' + dateEnd;
-                      } else if (a.end === null) {
-                        statut = 'En cours';
-                      }
-                      return (
-                        <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '4px 0', fontWeight: 700, color: '#888' }}>#{i + 1}</td>
-                          <td style={{ padding: '4px 0', color: nature === 'Seuil haut' ? '#FF204E' : '#3DB6E3', fontWeight: 700 }}>{nature}</td>
-                          <td style={{ padding: '4px 0', color: '#444' }}>{date}</td>
-                          <td style={{ padding: '4px 0', color: statut === 'En cours' ? '#FF6600' : statut === 'Terminée' ? '#00DCFA' : '#888', fontWeight: 700 }}>{statut}</td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </main>
     </div>
@@ -976,6 +974,292 @@ function DashboardPage({ selected, setSelected, navigate }) {
   );
 }
 
+function SiteDetailPage() {
+  const { siteId } = useParams();
+  const site = sitesData.find(s => s.nom === siteId);
+  const navigate = useNavigate();
+  const chartData = site?.chartData || [];
+  const tempMoyGlobale = chartData.length ? (chartData.reduce((acc, d) => acc + d.tempMoy, 0) / chartData.length).toFixed(1) : '--';
+
+  // Calcul des statistiques des logements
+  const calculerStatistiquesLogements = () => {
+    const logements = generateLogementsData(siteId, site?.logements || 0);
+    const derniereDate = logements[0]?.temperatures[logements[0].temperatures.length - 1];
+    
+    let logementsHorsNorme = 0;
+    let logementsCritiques = 0;
+    let logementsAlerte = 0;
+
+    logements.forEach(logement => {
+      const derniereTemp = logement.temperatures[logement.temperatures.length - 1].temp;
+      if (derniereTemp < 16 || derniereTemp > 26) {
+        logementsCritiques++;
+        logementsHorsNorme++;
+      } else if (derniereTemp < 18 || derniereTemp > 24) {
+        logementsAlerte++;
+        logementsHorsNorme++;
+      }
+    });
+
+    const pourcentageHorsNorme = Math.round((logementsHorsNorme / logements.length) * 100);
+    
+    return {
+      total: site?.logements || 0,
+      horsNorme: logementsHorsNorme,
+      critiques: logementsCritiques,
+      alerte: logementsAlerte,
+      pourcentage: pourcentageHorsNorme
+    };
+  };
+
+  const stats = calculerStatistiquesLogements();
+
+  // Détection des alertes (franchissement seuils)
+  let filteredAlerts = [];
+  if (site?.categorie !== 'conforme') {
+    const alerts = [];
+    let inAlert = false;
+    let alertStart = null;
+    chartData.forEach((d, i) => {
+      const t = d.tempMoy;
+      const isConforme = t >= 18 && t <= 24;
+      if (!isConforme) {
+        if (!inAlert) {
+          // On n'entre en alerte que si on n'est pas déjà en alerte
+          inAlert = true;
+          alertStart = i;
+        }
+        // Si déjà en alerte, on ne fait rien (pas de nouveau début)
+      } else {
+        if (inAlert) {
+          // On ferme l'alerte dès le premier retour en conforme
+          inAlert = false;
+          alerts.push({ start: alertStart, end: i }); // Fin d'alerte sur ce point conforme
+          alertStart = null;
+        }
+      }
+    });
+    // Si une alerte est en cours à la fin, on la garde ouverte
+    if (inAlert && alertStart !== null) alerts.push({ start: alertStart, end: null });
+    filteredAlerts = alerts;
+  } else {
+    filteredAlerts = []; // Aucun point d'alerte ni pastille sur les conformes
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#F7F9FB', fontFamily: 'Inter, Arial, sans-serif' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.5rem 2.5rem 1rem 2.5rem', background: '#fff', borderBottom: '1.5px solid #e6e6e6' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+          <button
+            onClick={() => navigate(-1)}
+            style={{
+              background: '#3DB6E3',
+              border: 'none',
+              borderRadius: '50%',
+              width: 40,
+              height: 40,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px #e0e0e0',
+              transition: 'background 0.18s, box-shadow 0.18s',
+              outline: 'none',
+              padding: 0,
+            }}
+            onMouseOver={e => { e.currentTarget.style.background = '#2699c7'; e.currentTarget.style.boxShadow = '0 4px 16px #b3e3fa'; }}
+            onMouseOut={e => { e.currentTarget.style.background = '#3DB6E3'; e.currentTarget.style.boxShadow = '0 2px 8px #e0e0e0'; }}
+            aria-label="Retour"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M13 16L7 10L13 4" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        {/* Icône utilisateur identique à la page tableau */}
+        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#E6F4FA', color: '#3DB6E3', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>RM</div>
+      </header>
+      <main style={{ maxWidth: 1500, margin: '0 auto', padding: '2.5rem 0 2.5rem 2.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 36 }}>
+          <div style={{ flex: 'none', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <span style={{ fontSize: 38, color: '#3DB6E3' }}>📈</span>
+              <span style={{ fontWeight: 800, fontSize: 36, color: '#222' }}>Température moyenne</span>
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 26, color: '#444', marginBottom: 2 }}>{site?.nom.replace(/_/g, ' ') || ''} - Immeuble haussmannien avec balcon filant</div>
+            <div style={{ color: '#888', fontSize: 21, marginBottom: 18 }}>6 Place de l'Hôtel de Ville, 75004 Paris</div>
+            {/* Température moyenne globale */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 2 }}>
+              <span style={{ fontSize: 32, color: '#3DB6E3', fontWeight: 700 }}>🌡️</span>
+              <span style={{ fontSize: 48, color: '#3DB6E3', fontWeight: 800 }}>{tempMoyGlobale} °C</span>
+              <span style={{ color: '#888', fontSize: 22, fontWeight: 500, marginLeft: 8 }}>moyenne sur 30 jours</span>
+            </div>
+            {/* Graphique avancé avec aires de seuils et courbe */}
+            <div style={{ width: 1160, height: 520, background: '#fff', borderRadius: 18, border: '1.5px solid #e6e6e6', marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px #e0e0e0' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 18, right: 18, left: 0, bottom: 18 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  {/* Aires de seuils avec plus d'opacité */}
+                  <ReferenceArea y1={0} y2={16} fill="#FF204E44" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={16} y2={18} fill="#FF660044" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={18} y2={24} fill="#00DCFA44" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={24} y2={26} fill="#FF660044" ifOverflow="extendDomain" />
+                  <ReferenceArea y1={26} y2={40} fill="#FF204E44" ifOverflow="extendDomain" />
+                  <XAxis dataKey="date" tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 40]} tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} unit="°C" />
+                  <Tooltip formatter={(value, name) => [`${value} °C`, 'Temp. moyenne']} />
+                  <Line type="monotone" dataKey="tempMoy" stroke="#3DB6E3" strokeWidth={6} dot={false} name="Temp. moyenne" style={{ filter: 'drop-shadow(0px 2px 4px #3DB6E355)' }} />
+                  {/* Marqueurs d'alerte début/fin distincts, sans texte, fin en bleu, côte à côte si même jour */}
+                  {filteredAlerts.map((a, i) => {
+                    const tStart = chartData[a.start]?.tempMoy;
+                    const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
+                    const isStartHorsConforme = tStart !== undefined && (tStart < 18 || tStart > 24);
+                    const isEndConforme = tEnd !== undefined && tEnd >= 18 && tEnd <= 24;
+                    const dots = [];
+                    // Début d'alerte (rouge) toujours affiché si hors conforme
+                    if (isStartHorsConforme) {
+                      dots.push(<ReferenceDot key={`start-${i}`} x={chartData[a.start].date} y={tStart} r={9} fill="#FF204E" stroke="#fff" strokeWidth={3} />);
+                    }
+                    // Fin d'alerte (bleu) uniquement si l'alerte est fermée (end != null et pas le dernier point du chart)
+                    if (a.end !== null && a.end !== chartData.length - 1 && isEndConforme) {
+                      dots.push(<ReferenceDot key={`end-${i}`} x={chartData[a.end].date} y={tEnd} r={9} fill="#00DCFA" stroke="#fff" strokeWidth={3} />);
+                    }
+                    return dots;
+                  })}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Légende graphique des seuils + alertes */}
+            <div style={{ display: 'flex', gap: 32, marginTop: 18, marginLeft: 8, alignItems: 'center', maxWidth: 1160 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#00DCFA44', opacity: 0.44, display: 'inline-block', border: '1.5px solid #B6F0FF' }}></span>
+                <span style={{ color: '#00DCFA', fontWeight: 700, fontSize: 16 }}>Zone conforme (18–24°C)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF660044', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6B3' }}></span>
+                <span style={{ color: '#FF6600', fontWeight: 700, fontSize: 16 }}>Zone alerte (16–18°C, 24–26°C)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF204E44', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6E0' }}></span>
+                <span style={{ color: '#FF204E', fontWeight: 700, fontSize: 16 }}>Zone critique ({'<'}16°C, {'>'}26°C)</span>
+              </div>
+              {/* Légende alertes */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#FF204E', border: '3px solid #fff', display: 'inline-block', verticalAlign: 'middle' }}></span>
+                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Début d'alerte</span>
+                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#00DCFA', border: '3px solid #fff', display: 'inline-block', marginLeft: 18, verticalAlign: 'middle' }}></span>
+                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Fin d'alerte</span>
+              </div>
+            </div>
+          </div>
+          {/* Colonne droite : carte + journal alignés en haut du graphique */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: 520, minWidth: 400, maxWidth: 400 }}>
+            {/* Carte alerte à droite */}
+            <div style={{ width: 400, background: site?.categorie === 'critique' ? '#FFE6E6' : site?.categorie === 'alerte' ? '#FFF3E6' : '#E6F7FB', borderRadius: 16, padding: '1.2rem 1.5rem 1.1rem 1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', boxShadow: site?.categorie === 'critique' ? '0 1px 4px #f3e2c0' : '0 1px 4px #ffe6b3', border: site?.categorie === 'critique' ? '1.2px solid #FFD6E0' : site?.categorie === 'alerte' ? '1.2px solid #FFD6B3' : '1.2px solid #B6F0FF', minHeight: 0, justifyContent: 'center', marginBottom: 14 }}>
+              {/* Badge dynamique */}
+              <div style={{ 
+                background: site?.categorie === 'critique' ? '#FF204E' : site?.categorie === 'alerte' ? '#FF6600' : '#E6F7FB',
+                borderRadius: '50%',
+                width: 28,
+                height: 28,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 10,
+                marginTop: 2
+              }}>
+                <span style={{ 
+                  color: site?.categorie === 'conforme' ? '#00DCFA' : '#fff',
+                  fontSize: site?.categorie === 'conforme' ? 15 : 17,
+                  fontWeight: 700
+                }}>
+                  {site?.categorie === 'conforme' ? '❤' : '!'}
+                </span>
+              </div>
+              {/* Titre et statistiques */}
+              <div style={{ 
+                fontWeight: 800,
+                fontSize: 20,
+                marginBottom: 6,
+                color: site?.categorie === 'critique' ? '#FF204E' : site?.categorie === 'alerte' ? '#FF6600' : '#00DCFA',
+                textAlign: 'center'
+              }}>
+                {site?.categorie === 'critique' ? 'Alerte critique' : site?.categorie === 'alerte' ? 'Alerte warning' : 'Conforme'}
+              </div>
+              {stats.horsNorme > 0 ? (
+                <>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: '#222', marginBottom: 2, textAlign: 'center' }}>
+                    {stats.critiques > 0 && `${stats.critiques} logement${stats.critiques > 1 ? 's' : ''} critique${stats.critiques > 1 ? 's' : ''}`}
+                    {stats.critiques > 0 && stats.alerte > 0 && ' et '}
+                    {stats.alerte > 0 && `${stats.alerte} logement${stats.alerte > 1 ? 's' : ''} en alerte`}
+                  </div>
+                  <div style={{ fontSize: 15, color: '#444', marginBottom: 10, textAlign: 'center' }}>
+                    {stats.pourcentage} % des logements hors seuils
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 15, color: '#444', marginBottom: 10, textAlign: 'center' }}>
+                  Tous les logements sont conformes
+                </div>
+              )}
+              <button 
+                onClick={() => navigate(`/site/${siteId}/logements`)}
+                style={{ border: '1.2px solid #bbb', borderRadius: 8, background: '#fff', color: '#222', fontWeight: 700, fontSize: 15, padding: '8px 18px', cursor: 'pointer', marginTop: 2, minWidth: 220 }}
+              >
+                Voir les logements concernés
+              </button>
+            </div>
+            {/* Journal d'alerte scrollable, hauteur max = graphique */}
+            <div style={{ width: 400, background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px #e0e0e0', padding: '1.1rem 1.2rem', flex: 1, overflowY: 'auto', maxHeight: 400 }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: '#222', marginBottom: 10, textAlign: 'left' }}>Journal des alertes</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
+                <thead>
+                  <tr style={{ color: '#888', fontWeight: 700, fontSize: 14 }}>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>#</th>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Nature</th>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Date</th>
+                    <th style={{ textAlign: 'left', paddingBottom: 4 }}>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredAlerts.length === 0 ? (
+                    <tr><td colSpan={4} style={{ color: '#aaa', textAlign: 'center', padding: 12 }}>Aucune alerte</td></tr>
+                  ) : (
+                    filteredAlerts.map((a, i) => {
+                      const tStart = chartData[a.start]?.tempMoy;
+                      const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
+                      const dateStart = chartData[a.start]?.date;
+                      const dateEnd = a.end !== null ? chartData[a.end]?.date : null;
+                      let nature = '';
+                      if (tStart !== undefined) nature = tStart < 18 ? 'Seuil bas' : tStart > 24 ? 'Seuil haut' : '';
+                      let statut = 'Commencée';
+                      let date = dateStart;
+                      if (a.end !== null) {
+                        statut = 'Terminée';
+                        date = dateStart + ' → ' + dateEnd;
+                      } else if (a.end === null) {
+                        statut = 'En cours';
+                      }
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '4px 0', fontWeight: 700, color: '#888' }}>#{i + 1}</td>
+                          <td style={{ padding: '4px 0', color: nature === 'Seuil haut' ? '#FF204E' : '#3DB6E3', fontWeight: 700 }}>{nature}</td>
+                          <td style={{ padding: '4px 0', color: '#444' }}>{date}</td>
+                          <td style={{ padding: '4px 0', color: statut === 'En cours' ? '#FF6600' : statut === 'Terminée' ? '#00DCFA' : '#888', fontWeight: 700 }}>{statut}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
 function App() {
   const [selected, setSelected] = React.useState('all');
   const navigate = useNavigate();
@@ -984,6 +1268,7 @@ function App() {
       <Route path="/" element={<DashboardPage selected={selected} setSelected={setSelected} navigate={navigate} />} />
       <Route path="/explorer" element={<ExplorerPage selected={selected} setSelected={setSelected} />} />
       <Route path="/site/:siteId" element={<SiteDetailPage />} />
+      <Route path="/site/:siteId/logements" element={<LogementsHeatmap />} />
     </Routes>
   );
 }
