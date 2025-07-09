@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, Line, LineChart, ReferenceArea, ReferenceDot } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend, Line, LineChart, ReferenceArea, ReferenceDot, LabelList } from 'recharts';
 import './App.css';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, useParams } from 'react-router-dom';
 
@@ -981,6 +981,44 @@ function SiteDetailPage() {
   const chartData = site?.chartData || [];
   const tempMoyGlobale = chartData.length ? (chartData.reduce((acc, d) => acc + d.tempMoy, 0) / chartData.length).toFixed(1) : '--';
 
+  // État pour basculer entre vue journalière et mensuelle
+  const [viewMode, setViewMode] = React.useState('daily'); // 'daily' ou 'monthly'
+  const [selectedMonth, setSelectedMonth] = React.useState(null);
+
+  // Génération des données mensuelles complètes pour l'année
+  const generateMonthlyData = () => {
+    const monthNames = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+    const currentYear = new Date().getFullYear();
+    
+    // Données mensuelles réalistes pour une année complète
+    const yearlyData = [
+      { month: 'Jan', tempMoy: 8.2, alerts: { warning: 12, critical: 8 } },
+      { month: 'Fév', tempMoy: 9.1, alerts: { warning: 10, critical: 6 } },
+      { month: 'Mar', tempMoy: 12.4, alerts: { warning: 8, critical: 3 } },
+      { month: 'Avr', tempMoy: 15.7, alerts: { warning: 5, critical: 1 } },
+      { month: 'Mai', tempMoy: 18.9, alerts: { warning: 0, critical: 0 } },
+      { month: 'Juin', tempMoy: 22.1, alerts: { warning: 0, critical: 0 } },
+      { month: 'Juil', tempMoy: 24.8, alerts: { warning: 6, critical: 2 } },
+      { month: 'Août', tempMoy: 24.2, alerts: { warning: 4, critical: 1 } },
+      { month: 'Sep', tempMoy: 20.5, alerts: { warning: 0, critical: 0 } },
+      { month: 'Oct', tempMoy: 16.3, alerts: { warning: 7, critical: 2 } },
+      { month: 'Nov', tempMoy: 11.8, alerts: { warning: 0, critical: 0 } },
+      { month: 'Déc', tempMoy: 7.9, alerts: { warning: 15, critical: 10 } }
+    ];
+    
+    return yearlyData.map((data, index) => ({
+      month: data.month,
+      year: currentYear,
+      monthIndex: index,
+      tempMoy: data.tempMoy.toFixed(1),
+      alerts: data.alerts,
+      totalAlerts: data.alerts.warning + data.alerts.critical,
+      hasAlerts: (data.alerts.warning + data.alerts.critical) > 0
+    }));
+  };
+
+  const monthlyData = generateMonthlyData();
+
   // Calcul des statistiques des logements
   const calculerStatistiquesLogements = () => {
     const logements = generateLogementsData(siteId, site?.logements || 0);
@@ -1037,13 +1075,151 @@ function SiteDetailPage() {
     filteredAlerts = [];
   }
 
-  // Ajout : état pour panneau déroulant
+  // Ajout : état pour panneau déroulant et alerte sélectionnée
   const [openPanel, setOpenPanel] = React.useState(false);
+  const [selectedAlert, setSelectedAlert] = React.useState(null);
 
   // Gestion du clic sur une pastille d'alerte du graphique
-  function handleAlertDotClick() {
+  function handleAlertDotClick(alertData) {
+    setSelectedAlert(alertData);
+    setSelectedMonth(null); // Réinitialiser la sélection de mois
     setOpenPanel(true);
   }
+
+  // Gestion du clic sur une barre mensuelle
+  function handleMonthlyBarClick(monthData) {
+    setSelectedMonth(monthData);
+    setOpenPanel(true);
+  }
+
+  // Générer des alertes simulées pour les mois sélectionnés
+  const generateMonthlyAlerts = (monthData) => {
+    if (!monthData) return [];
+    
+    const alerts = [];
+    const daysInMonth = new Date(monthData.year, monthData.monthIndex + 1, 0).getDate();
+    
+    // Générer des alertes basées sur les données du mois
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(monthData.year, monthData.monthIndex, day);
+      const tempMoy = parseFloat(monthData.tempMoy);
+      
+      // Ajouter de la variabilité quotidienne
+      const dailyVariation = (Math.random() - 0.5) * 8; // ±4°C
+      const dailyTemp = tempMoy + dailyVariation;
+      
+      if (dailyTemp < 16 || dailyTemp > 26) {
+        alerts.push({
+          id: `alert-${monthData.monthIndex}-${day}`,
+          date: date.toISOString().split('T')[0],
+          tempMoy: dailyTemp.toFixed(1),
+          type: 'critical',
+          message: dailyTemp < 16 ? 'Température trop basse' : 'Température trop élevée'
+        });
+      } else if (dailyTemp < 18 || dailyTemp > 24) {
+        alerts.push({
+          id: `alert-${monthData.monthIndex}-${day}`,
+          date: date.toISOString().split('T')[0],
+          tempMoy: dailyTemp.toFixed(1),
+          type: 'warning',
+          message: dailyTemp < 18 ? 'Température basse' : 'Température élevée'
+        });
+      }
+    }
+    
+    return alerts.slice(0, monthData.totalAlerts); // Limiter au nombre d'alertes du mois
+  };
+
+  // Générer toutes les alertes de l'année entière
+  const generateAllYearlyAlerts = () => {
+    const allAlerts = [];
+    
+    // Ajouter les alertes journalières existantes
+    filteredAlerts.forEach((alert, index) => {
+      const tStart = chartData[alert.start]?.tempMoy;
+      const tEnd = alert.end !== null ? chartData[alert.end]?.tempMoy : undefined;
+      const dateStart = chartData[alert.start]?.date;
+      const dateEnd = alert.end !== null ? chartData[alert.end]?.date : null;
+      
+      let nature = '';
+      if (tStart !== undefined) nature = tStart < 18 ? 'Seuil bas' : tStart > 24 ? 'Seuil haut' : '';
+      let statut = 'Commencée';
+      let date = dateStart;
+      if (alert.end !== null) {
+        statut = 'Terminée';
+        date = dateStart + ' → ' + dateEnd;
+      } else if (alert.end === null) {
+        statut = 'En cours';
+      }
+      
+      allAlerts.push({
+        id: `daily-${index}`,
+        nature,
+        date,
+        statut,
+        tempMoy: tStart,
+        type: 'daily'
+      });
+    });
+    
+    // Ajouter les alertes mensuelles pour tous les mois
+    monthlyData.forEach((monthData) => {
+      if (monthData.totalAlerts > 0) {
+        const monthAlerts = generateMonthlyAlerts(monthData);
+        monthAlerts.forEach((alert, index) => {
+          const nature = alert.type === 'critical' ? (parseFloat(alert.tempMoy) < 18 ? 'Seuil bas' : 'Seuil haut') : 'Alerte';
+          allAlerts.push({
+            id: `monthly-${monthData.monthIndex}-${index}`,
+            nature,
+            date: alert.date + ' (' + alert.tempMoy + '°C)',
+            statut: 'Terminée',
+            tempMoy: alert.tempMoy,
+            type: 'monthly',
+            month: monthData.month,
+            year: monthData.year
+          });
+        });
+      }
+    });
+    
+    // Trier par date (les plus récentes en premier)
+    return allAlerts.sort((a, b) => {
+      const dateA = new Date(a.date.split(' ')[0]);
+      const dateB = new Date(b.date.split(' ')[0]);
+      return dateB - dateA;
+    });
+  };
+
+  // Filtrer les alertes par mois sélectionné ou alerte spécifique
+  const getFilteredAlertsForMonth = () => {
+    if (!selectedMonth && !selectedAlert) return generateAllYearlyAlerts();
+    
+    if (selectedAlert) {
+      // Filtrer pour l'alerte spécifique sélectionnée
+      return generateAllYearlyAlerts().filter(alert => {
+        // Pour les alertes journalières, comparer les dates de début
+        if (selectedAlert.start !== undefined) {
+          const alertStartDate = chartData[selectedAlert.start]?.date;
+          return alert.date.includes(alertStartDate);
+        }
+        return false;
+      });
+    }
+    
+    if (selectedMonth) {
+      const monthStart = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
+      const monthEnd = new Date(selectedMonth.year, selectedMonth.monthIndex + 1, 0);
+      
+      return generateAllYearlyAlerts().filter(alert => {
+        const alertDate = new Date(alert.date.split(' ')[0]);
+        return alertDate >= monthStart && alertDate <= monthEnd;
+      });
+    }
+    
+    return generateAllYearlyAlerts();
+  };
+
+  const currentAlerts = getFilteredAlertsForMonth();
 
   return (
     <div style={{ minHeight: '100vh', background: '#F7F9FB', fontFamily: 'Inter, Arial, sans-serif', position: 'relative' }}>
@@ -1091,66 +1267,171 @@ function SiteDetailPage() {
               <span style={{ fontSize: 48, color: '#3DB6E3', fontWeight: 800 }}>{tempMoyGlobale} °C</span>
               <span style={{ color: '#888', fontSize: 22, fontWeight: 500, marginLeft: 8 }}>moyenne sur 30 jours</span>
             </div>
+            
+            {/* Toggle entre vue journalière et mensuelle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 16, marginBottom: 8 }}>
+              <div style={{ 
+                display: 'flex', 
+                background: '#F0F4F8', 
+                borderRadius: 12, 
+                padding: 4,
+                border: '1px solid #e6e6e6'
+              }}>
+                <button
+                  onClick={() => setViewMode('daily')}
+                  style={{
+                    background: viewMode === 'daily' ? '#3DB6E3' : 'transparent',
+                    color: viewMode === 'daily' ? '#fff' : '#666',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 16px',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Vue journalière
+                </button>
+                <button
+                  onClick={() => setViewMode('monthly')}
+                  style={{
+                    background: viewMode === 'monthly' ? '#3DB6E3' : 'transparent',
+                    color: viewMode === 'monthly' ? '#fff' : '#666',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '8px 16px',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Vue mensuelle
+                </button>
+              </div>
+              {selectedMonth && (
+                <div style={{ 
+                  background: '#E6F7FB', 
+                  color: '#3DB6E3', 
+                  padding: '6px 12px', 
+                  borderRadius: 8, 
+                  fontSize: 14, 
+                  fontWeight: 600 
+                }}>
+                  {selectedMonth.month} {selectedMonth.year} sélectionné
+                </div>
+              )}
+            </div>
             <div style={{ width: 1160, height: 520, background: '#fff', borderRadius: 18, border: '1.5px solid #e6e6e6', marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px #e0e0e0', position: 'relative' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 18, right: 18, left: 0, bottom: 18 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <ReferenceArea y1={0} y2={16} fill="#FF204E44" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={16} y2={18} fill="#FF660044" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={18} y2={24} fill="#00DCFA44" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={24} y2={26} fill="#FF660044" ifOverflow="extendDomain" />
-                  <ReferenceArea y1={26} y2={40} fill="#FF204E44" ifOverflow="extendDomain" />
-                  <XAxis dataKey="date" tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 40]} tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} unit="°C" />
-                  <Tooltip formatter={(value, name) => [`${value} °C`, 'Temp. moyenne']} />
-                  <Line type="monotone" dataKey="tempMoy" stroke="#3DB6E3" strokeWidth={6} dot={false} name="Temp. moyenne" style={{ filter: 'drop-shadow(0px 2px 4px #3DB6E355)' }} />
-                  {filteredAlerts.map((a, i) => {
-                    const tStart = chartData[a.start]?.tempMoy;
-                    const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
-                    const isStartHorsConforme = tStart !== undefined && (tStart < 18 || tStart > 24);
-                    const isEndConforme = tEnd !== undefined && tEnd >= 18 && tEnd <= 24;
-                    const dots = [];
-                    if (isStartHorsConforme) {
-                      dots.push(
-                        <ReferenceDot key={`start-${i}`} x={chartData[a.start].date} y={tStart} r={9} fill="#FF204E" stroke="#fff" strokeWidth={3} cursor="pointer" onClick={handleAlertDotClick} />
-                      );
-                    }
-                    if (a.end !== null && a.end !== chartData.length - 1 && isEndConforme) {
-                      dots.push(
-                        <ReferenceDot key={`end-${i}`} x={chartData[a.end].date} y={tEnd} r={9} fill="#00DCFA" stroke="#fff" strokeWidth={3} cursor="pointer" onClick={handleAlertDotClick} />
-                      );
-                    }
-                    return dots;
-                  })}
-                </LineChart>
+                {viewMode === 'daily' ? (
+                  <LineChart data={chartData} margin={{ top: 18, right: 18, left: 0, bottom: 18 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <ReferenceArea y1={0} y2={16} fill="#FF204E44" ifOverflow="extendDomain" />
+                    <ReferenceArea y1={16} y2={18} fill="#FF660044" ifOverflow="extendDomain" />
+                    <ReferenceArea y1={18} y2={24} fill="#00DCFA44" ifOverflow="extendDomain" />
+                    <ReferenceArea y1={24} y2={26} fill="#FF660044" ifOverflow="extendDomain" />
+                    <ReferenceArea y1={26} y2={40} fill="#FF204E44" ifOverflow="extendDomain" />
+                    <XAxis dataKey="date" tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 40]} tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} unit="°C" />
+                    <Tooltip formatter={(value, name) => [`${value} °C`, 'Temp. moyenne']} />
+                    <Line type="monotone" dataKey="tempMoy" stroke="#3DB6E3" strokeWidth={6} dot={false} name="Temp. moyenne" style={{ filter: 'drop-shadow(0px 2px 4px #3DB6E355)' }} />
+                    {filteredAlerts.map((a, i) => {
+                      const tStart = chartData[a.start]?.tempMoy;
+                      const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
+                      const isStartHorsConforme = tStart !== undefined && (tStart < 18 || tStart > 24);
+                      const isEndConforme = tEnd !== undefined && tEnd >= 18 && tEnd <= 24;
+                      const dots = [];
+                      if (isStartHorsConforme) {
+                        dots.push(
+                          <ReferenceDot key={`start-${i}`} x={chartData[a.start].date} y={tStart} r={9} fill="#FF204E" stroke="#fff" strokeWidth={3} cursor="pointer" onClick={() => handleAlertDotClick(a)} />
+                        );
+                      }
+                      if (a.end !== null && a.end !== chartData.length - 1 && isEndConforme) {
+                        dots.push(
+                          <ReferenceDot key={`end-${i}`} x={chartData[a.end].date} y={tEnd} r={9} fill="#00DCFA" stroke="#fff" strokeWidth={3} cursor="pointer" onClick={() => handleAlertDotClick(a)} />
+                        );
+                      }
+                      return dots;
+                    })}
+                  </LineChart>
+                ) : (
+                  <BarChart data={monthlyData} margin={{ top: 18, right: 18, left: 0, bottom: 18 }} barCategoryGap="10%">
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 40]} tick={{ fontSize: 13, fill: '#888' }} axisLine={false} tickLine={false} unit="°C" />
+                    <Tooltip 
+                      formatter={(value, name) => [`${value} °C`, 'Temp. moyenne']}
+                      labelFormatter={(label, payload) => {
+                        if (payload && payload[0]) {
+                          const monthData = payload[0].payload;
+                          return `${monthData.month} ${monthData.year}`;
+                        }
+                        return label;
+                      }}
+                    />
+                    <Bar 
+                      dataKey="tempMoy" 
+                      fill="#3DB6E3" 
+                      radius={[4, 4, 0, 0]}
+                      cursor="pointer"
+                      onClick={(data) => handleMonthlyBarClick(data)}
+                    >
+                      {monthlyData.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`}
+                          fill="#3DB6E3"
+                          style={{ 
+                            filter: 'drop-shadow(0px 2px 4px rgba(61, 182, 227, 0.3))'
+                          }}
+                        />
+                      ))}
+                      <LabelList dataKey="totalAlerts" content={renderAlertBadge} />
+                    </Bar>
+                  </BarChart>
+                )}
               </ResponsiveContainer>
             </div>
             <div style={{ display: 'flex', gap: 32, marginTop: 18, marginLeft: 8, alignItems: 'center', maxWidth: 1160 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#00DCFA44', opacity: 0.44, display: 'inline-block', border: '1.5px solid #B6F0FF' }}></span>
-                <span style={{ color: '#00DCFA', fontWeight: 700, fontSize: 16 }}>Zone conforme (18–24°C)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF660044', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6B3' }}></span>
-                <span style={{ color: '#FF6600', fontWeight: 700, fontSize: 16 }}>Zone alerte (16–18°C, 24–26°C)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF204E44', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6E0' }}></span>
-                <span style={{ color: '#FF204E', fontWeight: 700, fontSize: 16 }}>Zone critique ({'<'}16°C, {'>'}26°C)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
-                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#FF204E', border: '3px solid #fff', display: 'inline-block', verticalAlign: 'middle' }}></span>
-                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Début d'alerte</span>
-                <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#00DCFA', border: '3px solid #fff', display: 'inline-block', marginLeft: 18, verticalAlign: 'middle' }}></span>
-                <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Fin d'alerte</span>
-              </div>
+              {viewMode === 'daily' ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: 6, background: '#00DCFA44', opacity: 0.44, display: 'inline-block', border: '1.5px solid #B6F0FF' }}></span>
+                    <span style={{ color: '#00DCFA', fontWeight: 700, fontSize: 16 }}>Zone conforme (18–24°C)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF660044', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6B3' }}></span>
+                    <span style={{ color: '#FF6600', fontWeight: 700, fontSize: 16 }}>Zone alerte (16–18°C, 24–26°C)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 22, height: 22, borderRadius: 6, background: '#FF204E44', opacity: 0.44, display: 'inline-block', border: '1.5px solid #FFD6E0' }}></span>
+                    <span style={{ color: '#FF204E', fontWeight: 700, fontSize: 16 }}>Zone critique ({'<'}16°C, {'>'}26°C)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 24 }}>
+                    <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#FF204E', border: '3px solid #fff', display: 'inline-block', verticalAlign: 'middle' }}></span>
+                    <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Début d'alerte</span>
+                    <span style={{ width: 18, height: 18, borderRadius: '50%', background: '#00DCFA', border: '3px solid #fff', display: 'inline-block', marginLeft: 18, verticalAlign: 'middle' }}></span>
+                    <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Fin d'alerte</span>
+                  </div>
+                  </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 0 }}>
+                    <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#FF204E', border: '2px solid #fff', display: 'inline-block' }}></span>
+                    <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Alertes critiques</span>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#FF6600', border: '2px solid #fff', display: 'inline-block', marginLeft: 18 }}></span>
+                    <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Alertes warning</span>
+                  </div>
+                </>
+              )}
             </div>
             <button
               onClick={() => setOpenPanel(!openPanel)}
               style={{
                 position: 'fixed',
                 right: 32, // même marge que le panneau latéral
-                bottom: openPanel ? '340px' : '80px', // recouvert par le panneau quand ouvert
+                bottom: openPanel ? '340px' : '25px', // <- descend le bouton quand fermé
                 background: '#3DB6E3',
                 color: '#fff',
                 fontWeight: 700,
@@ -1261,78 +1542,183 @@ function SiteDetailPage() {
         borderTopRightRadius: 24,
         zIndex: 1002,
         transform: openPanel ? 'translateY(0)' : 'translateY(90%)',
-        transition: 'transform 0.35s cubic-bezier(.77,0,.18,1)',
-        minHeight: 320,
-        maxHeight: '80vh',
+        transition: 'transform 0.35s cubic-bezier(.77,0,.18,1), max-height 0.35s cubic-bezier(.77,0,.18,1), min-height 0.35s cubic-bezier(.77,0,.18,1), padding 0.2s',
+        minHeight: openPanel ? 320 : 112, // <- doublé
+        maxHeight: openPanel ? '80vh' : 128,
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'flex-start',
         alignItems: 'center',
-        padding: '2.5rem 0 2rem 0',
-        pointerEvents: openPanel ? 'auto' : 'none',
+        padding: openPanel ? '2.5rem 0 2rem 0' : '0.7rem 0 0.7rem 0',
+        pointerEvents: 'auto',
       }}>
-        {/* Croix de fermeture en haut à droite */}
-        <button onClick={() => setOpenPanel(false)} style={{
-          position: 'absolute',
-          top: 18,
-          right: 38,
-          background: 'transparent',
-          border: 'none',
-          fontSize: 32,
-          color: '#888',
-          cursor: 'pointer',
-          zIndex: 1003,
-        }} aria-label="Fermer le panneau">×</button>
-        <div style={{ width: '100%', maxWidth: 1160, margin: '0 auto', background: '#F7F9FB', borderRadius: 18, boxShadow: '0 2px 12px #e0e0e0', padding: '32px 24px', overflow: 'auto' }}>
-          <div style={{ fontWeight: 800, fontSize: 24, color: '#222', marginBottom: 22, textAlign: 'left', paddingLeft: 0, letterSpacing: 0.2 }}>Journal des alertes</div>
-          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 17, background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 8px #e0e0e0' }}>
-            <thead>
-              <tr style={{ background: '#F0F4F8', color: '#222', fontWeight: 800, fontSize: 17, letterSpacing: 0.1 }}>
-                <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>#</th>
-                <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>Nature</th>
-                <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>Date</th>
-                <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>Statut</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredAlerts.length === 0 ? (
-                <tr><td colSpan={4} style={{ color: '#aaa', textAlign: 'center', padding: 24, fontSize: 18 }}>Aucune alerte</td></tr>
-              ) : (
-                filteredAlerts.map((a, i) => {
-                  const tStart = chartData[a.start]?.tempMoy;
-                  const tEnd = a.end !== null ? chartData[a.end]?.tempMoy : undefined;
-                  const dateStart = chartData[a.start]?.date;
-                  const dateEnd = a.end !== null ? chartData[a.end]?.date : null;
-                  let nature = '';
-                  if (tStart !== undefined) nature = tStart < 18 ? 'Seuil bas' : tStart > 24 ? 'Seuil haut' : '';
-                  let statut = 'Commencée';
-                  let date = dateStart;
-                  if (a.end !== null) {
-                    statut = 'Terminée';
-                    date = dateStart + ' → ' + dateEnd;
-                  } else if (a.end === null) {
-                    statut = 'En cours';
-                  }
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid #f0f0f0', transition: 'background 0.18s', cursor: 'pointer' }}
-                      onMouseOver={e => e.currentTarget.style.background = '#F7F9FB'}
-                      onMouseOut={e => e.currentTarget.style.background = '#fff'}>
-                      <td style={{ padding: '14px 28px', fontWeight: 700, color: '#888', border: 'none' }}>#{i + 1}</td>
-                      <td style={{ padding: '14px 28px', color: nature === 'Seuil haut' ? '#FF204E' : '#3DB6E3', fontWeight: 700, border: 'none' }}>{nature}</td>
-                      <td style={{ padding: '14px 28px', color: '#444', border: 'none' }}>{date}</td>
-                      <td style={{ padding: '14px 28px', color: statut === 'En cours' ? '#FF6600' : statut === 'Terminée' ? '#00DCFA' : '#888', fontWeight: 700, border: 'none' }}>{statut}</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+        {/* Bandeau supérieur toujours visible */}
+        <div style={{ width: '100%', maxWidth: 1160, margin: '0 auto', background: '#F7F9FB', borderRadius: 18, boxShadow: '0 2px 12px #e0e0e0', padding: openPanel ? '32px 24px' : '0 24px', overflow: 'auto', minHeight: openPanel ? 0 : 32, display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: openPanel ? 'auto' : 32 }}>
+          <div style={{ fontWeight: 800, fontSize: openPanel ? 24 : 18, color: '#222', textAlign: 'left', paddingLeft: 0, letterSpacing: 0.2 }}>
+            Journal des alertes
+            {selectedMonth && openPanel && (
+              <span style={{ color: '#3DB6E3', fontSize: 20, marginLeft: 12 }}>
+                - {selectedMonth.month} {selectedMonth.year}
+              </span>
+            )}
+            {selectedAlert && openPanel && (
+              <span style={{ color: '#FF204E', fontSize: 20, marginLeft: 12 }}>
+                - Alerte spécifique
+              </span>
+            )}
+          </div>
+          {/* Bouton d'ouverture si replié */}
+          {!openPanel && (
+            <button
+              onClick={() => setOpenPanel(true)}
+              style={{
+                background: '#3DB6E3',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '6px 18px',
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px #e0e0e0',
+                marginLeft: 18
+              }}
+            >
+              Ouvrir
+            </button>
+          )}
+          {/* Croix de fermeture si ouvert */}
+          {openPanel && (
+            <button onClick={() => setOpenPanel(false)} style={{
+              background: 'transparent',
+              border: 'none',
+              fontSize: 32,
+              color: '#888',
+              cursor: 'pointer',
+              zIndex: 1003,
+            }} aria-label="Fermer le panneau">×</button>
+          )}
         </div>
+        {/* Contenu détaillé du panneau, affiché seulement si ouvert */}
+        {openPanel && (
+          <div style={{ width: '100%', maxWidth: 1160, margin: '0 auto', background: '#F7F9FB', borderRadius: 18, boxShadow: '0 2px 12px #e0e0e0', padding: '32px 24px', overflow: 'auto' }}>
+            {(selectedMonth || selectedAlert) && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 22 }}>
+                <button
+                  onClick={() => {
+                    setSelectedMonth(null);
+                    setSelectedAlert(null);
+                  }}
+                  style={{
+                    background: '#fff',
+                    border: '1px solid #3DB6E3',
+                    color: '#3DB6E3',
+                    borderRadius: 8,
+                    padding: '8px 16px',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseOver={e => e.currentTarget.style.background = '#F0F8FF'}
+                  onMouseOut={e => e.currentTarget.style.background = '#fff'}
+                >
+                  Voir toutes les alertes
+                </button>
+              </div>
+            )}
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 17, background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 2px 8px #e0e0e0' }}>
+              <thead>
+                <tr style={{ background: '#F0F4F8', color: '#222', fontWeight: 800, fontSize: 17, letterSpacing: 0.1 }}>
+                  <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>#</th>
+                  <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>Nature</th>
+                  <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>Date</th>
+                  <th style={{ textAlign: 'left', padding: '20px 28px 18px 28px', border: 'none' }}>Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentAlerts.length === 0 ? (
+                  <tr><td colSpan={4} style={{ color: '#aaa', textAlign: 'center', padding: 24, fontSize: 18 }}>
+                    {selectedMonth ? `Aucune alerte pour ${selectedMonth.month} ${selectedMonth.year}` : 
+                     selectedAlert ? 'Aucune alerte trouvée pour cette sélection' : 'Aucune alerte'}
+                  </td></tr>
+                ) : (
+                  currentAlerts.map((a, i) => {
+                    const color = a.nature === 'Seuil haut' ? '#FF204E' : a.nature === 'Seuil bas' ? '#FF204E' : '#FF6600';
+                    const statutColor = a.statut === 'En cours' ? '#FF6600' : a.statut === 'Terminée' ? '#00DCFA' : '#888';
+                    
+                    return (
+                      <tr key={a.id} style={{ borderBottom: '1px solid #f0f0f0', transition: 'background 0.18s', cursor: 'pointer' }}
+                        onMouseOver={e => e.currentTarget.style.background = '#F7F9FB'}
+                        onMouseOut={e => e.currentTarget.style.background = '#fff'}>
+                        <td style={{ padding: '14px 28px', fontWeight: 700, color: '#888', border: 'none' }}>#{i + 1}</td>
+                        <td style={{ padding: '14px 28px', color: color, fontWeight: 700, border: 'none' }}>{a.nature}</td>
+                        <td style={{ padding: '14px 28px', color: '#444', border: 'none' }}>{a.date}</td>
+                        <td style={{ padding: '14px 28px', color: statutColor, fontWeight: 700, border: 'none' }}>{a.statut}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+// Fonction de rendu du badge d'alerte centré sur la barre
+const renderAlertBadge = (props) => {
+  const { x, y, width, value } = props;
+  if (!value || value === 0) return null;
+  const badgeWidth = 40;
+  return (
+    <foreignObject
+      x={x + width / 2 - badgeWidth / 2}
+      y={y - 28}
+      width={badgeWidth}
+      height={28}
+      style={{ overflow: 'visible', pointerEvents: 'none' }}
+    >
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        pointerEvents: 'none',
+      }}>
+        <div style={{
+          background: '#FF204E',
+          color: '#fff',
+          fontWeight: 700,
+          fontSize: 14,
+          borderRadius: 10,
+          padding: '1px 8px 1px 8px',
+          boxShadow: '0 1px 4px #ffd6e0',
+          position: 'relative',
+          minWidth: 28,
+          textAlign: 'center',
+          zIndex: 2
+        }}>
+          {value} alerte{value > 1 ? 's' : ''}
+          <div style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: -6,
+            transform: 'translateX(-50%)',
+            width: 0,
+            height: 0,
+            borderLeft: '6px solid transparent',
+            borderRight: '6px solid transparent',
+            borderTop: '6px solid #FF204E',
+            zIndex: 1
+          }} />
+        </div>
+      </div>
+    </foreignObject>
+  );
+};
 
 function App() {
   const [selected, setSelected] = React.useState('all');
