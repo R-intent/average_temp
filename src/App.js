@@ -1080,7 +1080,6 @@ function SiteDetailPage() {
       <main style={{ maxWidth: 1500, margin: '0 auto', padding: '2.5rem 0 2.5rem 2.5rem' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 36 }}>
           <div style={{ flex: 'none', minWidth: 0 }}>
-            {/* Bloc principal : graphique, légende, etc. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
               <span style={{ fontSize: 38, color: '#3DB6E3' }}>📈</span>
               <span style={{ fontWeight: 800, fontSize: 36, color: '#222' }}>Température moyenne</span>
@@ -1146,28 +1145,27 @@ function SiteDetailPage() {
                 <span style={{ color: '#222', fontWeight: 600, fontSize: 15 }}>Fin d'alerte</span>
               </div>
             </div>
-            {/* Bouton flottant fondu avec le panneau drill down, en bas à droite, superposé */}
             <button
               onClick={() => setOpenPanel(!openPanel)}
-                              style={{
-                  position: 'fixed',
-                  right: 32, // même marge que le panneau latéral
-                  bottom: openPanel ? '340px' : '80px', // recouvert par le panneau quand ouvert
-                  background: '#3DB6E3',
-                  color: '#fff',
-                  fontWeight: 700,
-                  fontSize: 18,
-                  border: 'none',
-                  borderRadius: '24px 24px 32px 32px',
-                  boxShadow: '0 2px 12px #e0e0e0',
-                  padding: '16px 44px 16px 34px',
-                  cursor: 'pointer',
-                  transition: 'all 0.35s cubic-bezier(.77,0,.18,1)',
-                  zIndex: 1001,
-                  display: 'flex',
-                  alignItems: 'center',
-                  opacity: openPanel ? 0.7 : 1,
-                }}
+              style={{
+                position: 'fixed',
+                right: 32, // même marge que le panneau latéral
+                bottom: openPanel ? '340px' : '80px', // recouvert par le panneau quand ouvert
+                background: '#3DB6E3',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 18,
+                border: 'none',
+                borderRadius: '24px 24px 32px 32px',
+                boxShadow: '0 2px 12px #e0e0e0',
+                padding: '16px 44px 16px 34px',
+                cursor: 'pointer',
+                transition: 'all 0.35s cubic-bezier(.77,0,.18,1)',
+                zIndex: 1001,
+                display: 'flex',
+                alignItems: 'center',
+                opacity: openPanel ? 0.7 : 1,
+              }}
               onMouseOver={e => {
                 const arrow = e.currentTarget.querySelector('.arrow-drill');
                 if (arrow) arrow.style.transform = 'rotate(180deg)';
